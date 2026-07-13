@@ -1,0 +1,145 @@
+import express, { type NextFunction, type Request, type Response } from 'express'
+import path from 'node:path'
+import { access } from 'node:fs/promises'
+import { ZodError } from 'zod'
+import { appConfigSchema, exportRequestSchema } from '../shared/contracts.js'
+import type { ConfigStore } from './configStore.js'
+import type { ExportService } from './exportService.js'
+import type { WhatsAppService } from './whatsappService.js'
+
+interface AppDependencies {
+  configStore: ConfigStore
+  exportService: ExportService
+  whatsappService: WhatsAppService
+  development: boolean
+}
+
+function isLocalOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin)
+    return url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+export function createApp(dependencies: AppDependencies): express.Express {
+  const app = express()
+
+  app.disable('x-powered-by')
+  app.use((request, response, next) => {
+    const hostAllowed = ['127.0.0.1', 'localhost'].includes(request.hostname)
+    const origin = request.get('origin')
+    if (!hostAllowed || (origin && !isLocalOrigin(origin))) {
+      response.status(403).json({ error: 'Acesso permitido somente pela aplicação local.' })
+      return
+    }
+    next()
+  })
+  app.use(express.json({ limit: '64kb' }))
+
+  app.get('/api/status', (_request, response) => {
+    response.json(dependencies.whatsappService.getStatus())
+  })
+
+  app.get('/api/config', (_request, response) => {
+    response.json(dependencies.configStore.get())
+  })
+
+  app.put('/api/config', async (request, response, next) => {
+    try {
+      const config = appConfigSchema.parse(request.body)
+      const saved = await dependencies.configStore.save(config)
+      dependencies.whatsappService.onConfigUpdated()
+      response.json(saved)
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get('/api/chats', async (request, response, next) => {
+    try {
+      const refresh = request.query.refresh === 'true'
+      response.json(await dependencies.whatsappService.getChats(refresh))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post('/api/sync', async (_request, response, next) => {
+    try {
+      await dependencies.whatsappService.syncSelected()
+      response.json(dependencies.whatsappService.getStatus())
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post('/api/session/reset', async (_request, response, next) => {
+    try {
+      await dependencies.whatsappService.resetSession()
+      response.status(202).json(dependencies.whatsappService.getStatus())
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post('/api/exports', async (request, response, next) => {
+    try {
+      const exportRequest = exportRequestSchema.parse(request.body)
+      const result = await dependencies.exportService.create(
+        exportRequest,
+        dependencies.configStore.get().selectedChatIds,
+      )
+      response.status(201).json(result)
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get('/api/exports/:id', async (request, response, next) => {
+    try {
+      const filePath = dependencies.exportService.resolveFile(request.params.id)
+      if (!filePath) {
+        response.status(404).json({ error: 'Exportação não encontrada.' })
+        return
+      }
+      await access(filePath)
+      response.download(filePath, path.basename(filePath))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post('/api/data-directory/open', async (_request, response, next) => {
+    try {
+      await dependencies.exportService.openDataDirectory()
+      response.status(204).end()
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  if (dependencies.development) {
+    app.get('/', (_request, response) => response.redirect('http://127.0.0.1:5173'))
+  } else {
+    const webDirectory = path.join(process.cwd(), 'dist', 'web')
+    app.use(express.static(webDirectory))
+    app.get(/.*/, (_request, response) => response.sendFile(path.join(webDirectory, 'index.html')))
+  }
+
+  app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+    if (error instanceof ZodError) {
+      response.status(400).json({
+        error: 'Dados inválidos.',
+        details: error.issues.map((issue) => ({ path: issue.path, message: issue.message })),
+      })
+      return
+    }
+
+    const message = error instanceof Error ? error.message : String(error)
+    response.status(500).json({ error: message })
+  })
+
+  return app
+}

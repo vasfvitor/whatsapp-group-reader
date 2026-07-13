@@ -1,0 +1,13 @@
+{
+  "sources": [
+    { "type": "exact", "value": "Equipe Projeto" },
+    { "type": "contains", "value": "diretoria" },
+    { "type": "tag", "value": "resumir" }
+  ],
+  "selectedChatIds": [],
+  "chatTags": {},
+  "sync": {
+    "lookbackHours": 24,
+    "maxMessagesPerChat": 500
+  }
+}

@@ -1,0 +1,173 @@
+:root {
+  color-scheme: light;
+  --background: #f3f6f2;
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-muted: #f0f4f0;
+  --text: #15251c;
+  --text-muted: #66736b;
+  --border: #dce4dd;
+  --green: #168c57;
+  --green-dark: #0d603c;
+  --green-soft: #daf3e5;
+  --amber-dark: #825a0a;
+  --amber-soft: #fff0c9;
+  --red-dark: #8d2525;
+  --red-soft: #ffe1e1;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(89, 190, 132, 0.17), transparent 28rem),
+    var(--background);
+  color: var(--text);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h2 {
+  margin-bottom: 0;
+  font-size: 1.15rem;
+}
+
+.panel {
+  border: 1px solid rgba(220, 228, 221, 0.9);
+  border-radius: 1.1rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  box-shadow: 0 16px 45px rgba(27, 58, 39, 0.06);
+  backdrop-filter: blur(12px);
+}
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  color: var(--green-dark);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.field input,
+.field select,
+.tag-field input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  outline: none;
+  background: #fff;
+  color: var(--text);
+}
+
+.field input:focus,
+.field select:focus,
+.tag-field input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(22, 140, 87, 0.12);
+}
+
+.button {
+  border: 0;
+  border-radius: 0.7rem;
+  padding: 0.72rem 0.95rem;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.button--primary {
+  background: var(--green);
+  color: #fff;
+}
+
+.button--secondary {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.button--ghost {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+}
+
+.button--danger {
+  background: var(--red-soft);
+  color: var(--red-dark);
+}
+
+.text-button,
+.icon-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.icon-button {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 50%;
+  font-size: 1.25rem;
+}
+
+.inline-error,
+.app-error {
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background: var(--red-soft);
+  color: var(--red-dark);
+}
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+  padding: 2.5rem 1rem;
+  color: var(--text-muted);
+  text-align: center;
+}

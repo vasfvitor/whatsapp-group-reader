@@ -1,0 +1,18 @@
+{
+  "extends": "@tsconfig/node24/tsconfig.json",
+  "include": ["server/**/*.ts", "shared/**/*.ts"],
+  "exclude": ["**/__tests__/**"],
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist/server",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "sourceMap": true,
+    "declaration": false,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.server.tsbuildinfo"
+  }
+}

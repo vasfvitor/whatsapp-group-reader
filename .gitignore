@@ -13,6 +13,8 @@ dist
 dist-ssr
 coverage
 *.local
+data
+.wwebjs_auth
 
 # Editor directories and files
 .vscode/*
