@@ -98,6 +98,21 @@ export interface SyncProgress {
   nextActionAt: string | null
 }
 
+export function createIdleSyncProgress(): SyncProgress {
+  return {
+    phase: 'idle',
+    trigger: null,
+    totalChats: 0,
+    completedChats: 0,
+    skippedChats: 0,
+    failedChats: 0,
+    currentChatId: null,
+    currentChatName: null,
+    currentChunkTarget: null,
+    nextActionAt: null,
+  }
+}
+
 export interface AppStatus {
   state: ConnectionState
   qrDataUrl: string | null

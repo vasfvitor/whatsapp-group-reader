@@ -2,14 +2,14 @@ import { rm } from 'node:fs/promises'
 import QRCode from 'qrcode'
 import WhatsAppWeb from 'whatsapp-web.js'
 import type WAWebJSTypes from 'whatsapp-web.js'
-import type {
-  AppStatus,
-  ChatSummary,
-  ChatType,
-  ConnectionState,
-  MessageRecord,
-  SyncProgress,
-  SyncTrigger,
+import {
+  createIdleSyncProgress,
+  type AppStatus,
+  type ChatSummary,
+  type ChatType,
+  type ConnectionState,
+  type MessageRecord,
+  type SyncTrigger,
 } from '../shared/contracts.js'
 import type { ConfigStore } from './configStore.js'
 import type { MessageDatabase } from './database.js'
@@ -47,19 +47,8 @@ const RECONNECT_DELAYS = [2_000, 5_000, 10_000, 30_000, 60_000]
 const CONTACT_SERVERS = new Set(['c.us', 'lid', 's.whatsapp.net'])
 const HISTORY_CHUNK_SIZE = 50
 
-function idleSyncProgress(): SyncProgress {
-  return {
-    phase: 'idle',
-    trigger: null,
-    totalChats: 0,
-    completedChats: 0,
-    skippedChats: 0,
-    failedChats: 0,
-    currentChatId: null,
-    currentChatName: null,
-    currentChunkTarget: null,
-    nextActionAt: null,
-  }
+function chatDisplayName(chat: WhatsAppChat): string {
+  return chat.name || chat.id.user
 }
 
 export class WhatsAppService {
@@ -77,7 +66,7 @@ export class WhatsAppService {
   private reconnectTimer: NodeJS.Timeout | null = null
   private syncPromise: Promise<void> | null = null
   private syncControl: SyncControl | null = null
-  private syncProgress = idleSyncProgress()
+  private syncProgress = createIdleSyncProgress()
   private pendingAutomaticSync = false
   private delayTimer: NodeJS.Timeout | null = null
   private delayResolve: (() => void) | null = null
@@ -306,7 +295,7 @@ export class WhatsAppService {
     this.lastError = null
     this.warnings = []
     this.syncProgress = {
-      ...idleSyncProgress(),
+      ...createIdleSyncProgress(),
       phase: 'running',
       trigger: options.trigger,
       totalChats: chatIds.length,
@@ -330,7 +319,7 @@ export class WhatsAppService {
       }
 
       this.syncProgress.currentChatId = chatId
-      this.syncProgress.currentChatName = chat.name || chat.id.user
+      this.syncProgress.currentChatName = chatDisplayName(chat)
 
       if (chatsInBatch >= batchSize) {
         this.message = 'Pausa de carga antes de continuar a fila…'
@@ -365,7 +354,7 @@ export class WhatsAppService {
         this.database.markChatSyncFailed(chatId, failure)
         this.syncProgress.failedChats += 1
         chatsInBatch += 1
-        this.warnings.push(`${chat.name || chat.id.user}: ${failure}`)
+        this.warnings.push(`${chatDisplayName(chat)}: ${failure}`)
       } finally {
         this.syncProgress.currentChunkTarget = null
       }
@@ -418,12 +407,12 @@ export class WhatsAppService {
 
       if (decision.gapRisk) {
         this.warnings.push(
-          `${chat.name || chat.id.user}: pode haver uma lacuna anterior às ${maximum} mensagens recuperadas.`,
+          `${chatDisplayName(chat)}: pode haver uma lacuna anterior às ${maximum} mensagens recuperadas.`,
         )
       }
       if (decision.stop) return
 
-      this.message = `Pausa antes do próximo bloco de ${chat.name || chat.id.user}…`
+      this.message = `Pausa antes do próximo bloco de ${chatDisplayName(chat)}…`
       await this.waitForPacing(betweenChunksMs, client, control)
       target = Math.min(target + HISTORY_CHUNK_SIZE, maximum)
     }
@@ -469,7 +458,7 @@ export class WhatsAppService {
     this.pauseResolve = null
     this.syncControl = null
     this.syncPromise = null
-    this.syncProgress = idleSyncProgress()
+    this.syncProgress = createIdleSyncProgress()
 
     if (this.client === client && this.state === 'syncing') {
       this.state = 'ready'
@@ -539,7 +528,7 @@ export class WhatsAppService {
 
     const record: MessageRecord = {
       chatId: chat.id._serialized,
-      chatName: chat.name || chat.id.user,
+      chatName: chatDisplayName(chat),
       chatType,
       messageId: normalized.messageId,
       author: await this.resolveAuthor(message),
@@ -583,7 +572,7 @@ export class WhatsAppService {
     const id = chat.id._serialized
     return {
       id,
-      name: chat.name || chat.id.user,
+      name: chatDisplayName(chat),
       type,
       tags: chatTags[id] ?? [],
       selected: selectedChatIds.includes(id),

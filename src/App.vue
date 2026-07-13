@@ -26,8 +26,6 @@ function confirmManualSync(): void {
 
 <template>
   <main class="app-shell">
-    <header class="app-header"></header>
-
     <p v-if="reader.error.value" class="app-error" role="alert">{{ reader.error.value }}</p>
 
     <div v-if="reader.loading.value" class="loading-state">Carregando aplicação local…</div>
@@ -113,58 +111,6 @@ function confirmManualSync(): void {
   padding: 2.5rem 0 3rem;
 }
 
-.app-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 2rem;
-  margin-bottom: 1.5rem;
-}
-
-.brand-kicker {
-  margin-bottom: 0.4rem;
-  color: var(--green-dark);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.app-header h1 {
-  margin-bottom: 0.55rem;
-  font-size: clamp(1.8rem, 4vw, 3rem);
-  letter-spacing: -0.045em;
-}
-
-.brand-copy {
-  max-width: 650px;
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 1.02rem;
-}
-
-.privacy-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.65rem 0.85rem;
-  background: rgba(255, 255, 255, 0.75);
-  color: var(--green-dark);
-  font-size: 0.78rem;
-  font-weight: 750;
-  white-space: nowrap;
-}
-
-.privacy-dot {
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 0 4px var(--green-soft);
-}
-
 .top-grid {
   display: grid;
   grid-template-columns: minmax(280px, 0.85fr) minmax(400px, 1.15fr);
@@ -225,14 +171,9 @@ function confirmManualSync(): void {
     padding-top: 1.25rem;
   }
 
-  .app-header,
   .save-bar {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .privacy-badge {
-    width: fit-content;
   }
 }
 </style>

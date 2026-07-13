@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, shallowReadonly, shallowRef } from 'vue'
 import {
   createDefaultConfig,
+  createIdleSyncProgress,
   type AppConfig,
   type AppStatus,
   type ChatSummary,
@@ -21,18 +22,7 @@ const initialStatus: AppStatus = {
   selectedChats: 0,
   dataDirectory: '',
   warnings: [],
-  syncProgress: {
-    phase: 'idle',
-    trigger: null,
-    totalChats: 0,
-    completedChats: 0,
-    skippedChats: 0,
-    failedChats: 0,
-    currentChatId: null,
-    currentChatName: null,
-    currentChunkTarget: null,
-    nextActionAt: null,
-  },
+  syncProgress: createIdleSyncProgress(),
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
