@@ -16,11 +16,11 @@ function confirmSessionReset(): void {
   if (confirmed) void reader.resetSession()
 }
 
-function confirmManualSync(): void {
+function confirmForcedSync(): void {
   const confirmed = window.confirm(
-    'A sincronização manual poderá consultar novamente chats acessados recentemente. O ritmo controlado continuará ativo. Iniciar?',
+    'Esta ação ignora o cooldown e poderá consultar novamente chats acessados recentemente. O ritmo controlado e os retries limitados continuarão ativos. Iniciar?',
   )
-  if (confirmed) void reader.syncNow()
+  if (confirmed) void reader.syncNow(true)
 }
 </script>
 
@@ -55,7 +55,7 @@ function confirmManualSync(): void {
         :chats="reader.chats.value"
         :selected-chat-ids="reader.config.value.selectedChatIds"
         :chat-tags="reader.config.value.chatTags"
-        :disabled="reader.status.value.state !== 'ready' && reader.status.value.state !== 'syncing'"
+        :disabled="reader.status.value.state !== 'ready' || reader.refreshing.value"
         @update:selected-chat-ids="reader.setSelectedChatIds"
         @update:chat-tags="reader.setChatTags"
         @refresh="reader.refreshChats(true)"
@@ -88,10 +88,11 @@ function confirmManualSync(): void {
         :settings="reader.config.value.sync"
         :syncing="reader.syncing.value"
         :exporting="reader.exporting.value"
-        :ready="reader.status.value.state === 'ready'"
+        :ready="reader.status.value.state === 'ready' && !reader.refreshing.value"
         :last-export="reader.lastExport.value"
         :data-directory="reader.status.value.dataDirectory"
-        @sync="confirmManualSync"
+        @sync="reader.syncNow(false)"
+        @force-sync="confirmForcedSync"
         @export="reader.createExport"
         @open-directory="reader.openDataDirectory"
       />

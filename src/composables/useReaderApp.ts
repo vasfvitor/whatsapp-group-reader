@@ -46,6 +46,7 @@ export function useReaderApp() {
   const error = shallowRef<string | null>(null)
   const loading = shallowRef(true)
   const saving = shallowRef(false)
+  const refreshing = shallowRef(false)
   const exporting = shallowRef(false)
   const lastExport = shallowRef<ExportResult | null>(null)
   let pollTimer: number | null = null
@@ -79,10 +80,16 @@ export function useReaderApp() {
   }
 
   async function refreshChats(force = false): Promise<void> {
-    const result = await run(() =>
-      requestJson<ChatSummary[]>(`/api/chats${force ? '?refresh=true' : ''}`),
-    )
-    if (result) chats.value = result
+    if (refreshing.value) return
+    refreshing.value = true
+    try {
+      const result = await run(() =>
+        requestJson<ChatSummary[]>(`/api/chats${force ? '?refresh=true' : ''}`),
+      )
+      if (result) chats.value = result
+    } finally {
+      refreshing.value = false
+    }
   }
 
   async function load(): Promise<void> {
@@ -135,11 +142,11 @@ export function useReaderApp() {
     saving.value = false
   }
 
-  async function syncNow(): Promise<void> {
+  async function syncNow(forceRecent = false): Promise<void> {
     const result = await run(() =>
       requestJson<AppStatus>('/api/sync', {
         method: 'POST',
-        body: JSON.stringify({ forceRecent: true }),
+        body: JSON.stringify({ forceRecent }),
       }),
     )
     if (result) status.value = result
@@ -194,6 +201,7 @@ export function useReaderApp() {
     error: shallowReadonly(error),
     loading: shallowReadonly(loading),
     saving: shallowReadonly(saving),
+    refreshing: shallowReadonly(refreshing),
     syncing,
     exporting: shallowReadonly(exporting),
     lastExport: shallowReadonly(lastExport),

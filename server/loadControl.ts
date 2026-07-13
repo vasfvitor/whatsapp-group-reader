@@ -15,6 +15,14 @@ export interface LoadProfileSettings {
   periodicPauseMs: GaussianRange
   chatsPerBatch: GaussianRange
   automaticCooldownMs: number
+  readRetry: BackoffPolicy
+}
+
+export interface BackoffPolicy {
+  baseMs: number
+  maxMs: number
+  maxRetries: number
+  jitterRatio: number
 }
 
 export interface RandomSource {
@@ -27,6 +35,13 @@ export const cryptoRandomSource: RandomSource = {
   next: () => randomInt(CRYPTO_RANGE) / CRYPTO_RANGE,
 }
 
+export const RECONNECT_BACKOFF: BackoffPolicy = {
+  baseMs: 2_000,
+  maxMs: 60_000,
+  maxRetries: Number.POSITIVE_INFINITY,
+  jitterRatio: 0.2,
+}
+
 export const LOAD_PROFILES: Record<LoadProfile, LoadProfileSettings> = {
   balanced: {
     betweenChunksMs: { mean: 2_500, standardDeviation: 750, min: 1_000, max: 5_000 },
@@ -34,6 +49,7 @@ export const LOAD_PROFILES: Record<LoadProfile, LoadProfileSettings> = {
     periodicPauseMs: { mean: 45_000, standardDeviation: 15_000, min: 20_000, max: 90_000 },
     chatsPerBatch: { mean: 18, standardDeviation: 4, min: 12, max: 26 },
     automaticCooldownMs: 30 * 60_000,
+    readRetry: { baseMs: 2_000, maxMs: 10_000, maxRetries: 2, jitterRatio: 0.2 },
   },
   conservative: {
     betweenChunksMs: { mean: 5_000, standardDeviation: 1_500, min: 2_000, max: 9_000 },
@@ -46,7 +62,20 @@ export const LOAD_PROFILES: Record<LoadProfile, LoadProfileSettings> = {
     },
     chatsPerBatch: { mean: 10, standardDeviation: 2, min: 6, max: 14 },
     automaticCooldownMs: 60 * 60_000,
+    readRetry: { baseMs: 5_000, maxMs: 20_000, maxRetries: 2, jitterRatio: 0.2 },
   },
+}
+
+export function sampleExponentialBackoff(
+  policy: BackoffPolicy,
+  attempt: number,
+  random: RandomSource = cryptoRandomSource,
+): number {
+  const nominal = Math.min(policy.maxMs, policy.baseMs * 2 ** Math.max(0, attempt))
+  const spread = nominal * policy.jitterRatio
+  const minimum = Math.max(1, nominal - spread)
+  const maximum = Math.min(policy.maxMs, nominal + spread)
+  return Math.round(minimum + (maximum - minimum) * random.next())
 }
 
 export function sampleTruncatedGaussian(

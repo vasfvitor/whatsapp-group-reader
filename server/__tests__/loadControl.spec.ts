@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   evaluateHistoryPage,
+  sampleExponentialBackoff,
   sampleInteger,
   sampleTruncatedGaussian,
   shuffled,
@@ -25,6 +26,15 @@ describe('load control', () => {
     const range = { mean: 10, standardDeviation: 100, min: 9, max: 11 }
 
     expect(sampleInteger(range, constantRandom(Number.EPSILON))).toBe(10)
+  })
+
+  it('applies capped exponential backoff with bounded jitter', () => {
+    const policy = { baseMs: 2_000, maxMs: 60_000, maxRetries: 2, jitterRatio: 0.2 }
+
+    expect(sampleExponentialBackoff(policy, 0, constantRandom(0))).toBe(1_600)
+    expect(sampleExponentialBackoff(policy, 1, constantRandom(0.5))).toBe(4_000)
+    expect(sampleExponentialBackoff(policy, 2, constantRandom(1))).toBe(9_600)
+    expect(sampleExponentialBackoff(policy, 20, constantRandom(1))).toBe(60_000)
   })
 
   it('shuffles without mutating the source list', () => {

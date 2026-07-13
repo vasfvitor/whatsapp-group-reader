@@ -30,4 +30,13 @@ describe('ChatSelector', () => {
     const tagEvents = wrapper.emitted('update:chatTags')
     expect(tagEvents?.[tagEvents.length - 1]).toEqual([{ 'group@g.us': ['Resumir', 'trabalho'] }])
   })
+
+  it('disables refresh and selection while bulk reads are unavailable', () => {
+    const wrapper = mount(ChatSelector, {
+      props: { chats, selectedChatIds: [], chatTags: {}, disabled: true },
+    })
+
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('input[type="checkbox"]').attributes('disabled')).toBeDefined()
+  })
 })

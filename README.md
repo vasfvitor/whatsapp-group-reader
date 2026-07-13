@@ -78,7 +78,9 @@ Mídias sem legenda, chamadas, reações, enquetes, status, broadcasts, canais, 
 
 A sincronização histórica processa um chat por vez e amplia a busca em blocos de 50 mensagens. Entre blocos e chats são aplicados intervalos randômicos limitados, com pausas maiores após pequenos lotes. O perfil **Conservador** é o padrão e usa intervalos e cooldowns maiores.
 
-Sincronizações automáticas após conexão, reconexão ou mudança de configuração ignoram temporariamente chats consultados recentemente. A sincronização manual pode reconsultá-los após confirmação, mas continua respeitando os intervalos. Filas longas podem ser pausadas, retomadas ou canceladas sem remover dados já coletados.
+Sincronizações automáticas e manuais ignoram temporariamente chats consultados recentemente. A ação **Forçar nova consulta** permite ignorar esse cooldown após confirmação explícita, mas continua respeitando os intervalos. Filas longas podem ser pausadas, retomadas ou canceladas sem remover dados já coletados. Ao retomar, um novo intervalo completo é aplicado antes da próxima leitura.
+
+Falhas de leitura usam no máximo duas novas tentativas com backoff exponencial e jitter limitado. A reconexão também usa backoff exponencial, partindo de aproximadamente 2 segundos e limitada a 60 segundos. Atualizações simultâneas da lista são agrupadas e, durante uma sincronização, a lista em cache é usada sem uma nova consulta ao WhatsApp.
 
 Esse controle reduz rajadas locais; ele não simula de forma garantida uma pessoa, não contorna regras do WhatsApp e não elimina o risco associado ao cliente não oficial.
 
@@ -92,3 +94,4 @@ A sessão usa `LocalAuth` e persiste entre reinicializações. Desconexões tran
 - Sem integração com LLM nesta fase.
 - Sem Electron, nuvem, servidor público ou autenticação multiusuário.
 - `fetchMessages()` aceita limite, mas não uma data inicial; a aplicação amplia o limite gradualmente e aplica o corte temporal localmente.
+- O pacing controla o intervalo entre chamadas `fetchMessages()`, mas não controla eventuais operações internas realizadas pelo próprio `whatsapp-web.js` dentro de uma chamada.

@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   sync: []
+  forceSync: []
   export: [request: ExportRequest]
   openDirectory: []
 }>()
@@ -71,6 +72,14 @@ function submitExport(): void {
         {{ syncing ? 'Sincronizando…' : 'Sincronizar agora' }}
       </button>
       <button
+        class="button button--ghost"
+        type="button"
+        :disabled="!ready || syncing"
+        @click="$emit('forceSync')"
+      >
+        Forçar nova consulta
+      </button>
+      <button
         class="button button--primary"
         type="button"
         :disabled="exporting"
@@ -82,6 +91,11 @@ function submitExport(): void {
         Abrir pasta de dados
       </button>
     </div>
+
+    <p class="sync-help">
+      A sincronização normal respeita o cooldown. Use a opção forçada somente quando precisar
+      consultar novamente conversas recentes.
+    </p>
 
     <p v-if="lastExport" class="export-result">
       {{ lastExport.count }} mensagens exportadas em <strong>{{ lastExport.fileName }}</strong
@@ -117,6 +131,12 @@ function submitExport(): void {
   padding: 0.75rem;
   background: var(--green-soft);
   color: var(--green-dark);
+}
+
+.sync-help {
+  margin: 0.65rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
 }
 
 .data-path {
