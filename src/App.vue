@@ -19,17 +19,6 @@ function confirmSessionReset(): void {
 <template>
   <main class="app-shell">
     <header class="app-header">
-      <div>
-        <p class="brand-kicker">Leitor local</p>
-        <h1>WhatsApp Group Reader</h1>
-        <p class="brand-copy">
-          Escolha conversas, colete somente texto e prepare um JSONL local para análise.
-        </p>
-      </div>
-      <div class="privacy-badge">
-        <span class="privacy-dot"></span>
-        Sem envio de mensagens
-      </div>
     </header>
 
     <p v-if="reader.error.value" class="app-error" role="alert">{{ reader.error.value }}</p>
