@@ -4,6 +4,7 @@ import ChatSelector from './components/ChatSelector.vue'
 import SourceRulesPanel from './components/SourceRulesPanel.vue'
 import SyncSettingsForm from './components/SyncSettingsForm.vue'
 import ExportPanel from './components/ExportPanel.vue'
+import SyncProgressPanel from './components/SyncProgressPanel.vue'
 import { useReaderApp } from './composables/useReaderApp'
 
 const reader = useReaderApp()
@@ -14,12 +15,18 @@ function confirmSessionReset(): void {
   )
   if (confirmed) void reader.resetSession()
 }
+
+function confirmManualSync(): void {
+  const confirmed = window.confirm(
+    'A sincronização manual poderá consultar novamente chats acessados recentemente. O ritmo controlado continuará ativo. Iniciar?',
+  )
+  if (confirmed) void reader.syncNow()
+}
 </script>
 
 <template>
   <main class="app-shell">
-    <header class="app-header">
-    </header>
+    <header class="app-header"></header>
 
     <p v-if="reader.error.value" class="app-error" role="alert">{{ reader.error.value }}</p>
 
@@ -71,6 +78,14 @@ function confirmSessionReset(): void {
         </button>
       </div>
 
+      <SyncProgressPanel
+        v-if="reader.status.value.syncProgress.phase !== 'idle'"
+        :progress="reader.status.value.syncProgress"
+        @pause="reader.pauseSync"
+        @resume="reader.resumeSync"
+        @cancel="reader.cancelSync"
+      />
+
       <ExportPanel
         :settings="reader.config.value.sync"
         :syncing="reader.syncing.value"
@@ -78,7 +93,7 @@ function confirmSessionReset(): void {
         :ready="reader.status.value.state === 'ready'"
         :last-export="reader.lastExport.value"
         :data-directory="reader.status.value.dataDirectory"
-        @sync="reader.syncNow"
+        @sync="confirmManualSync"
         @export="reader.createExport"
         @open-directory="reader.openDataDirectory"
       />

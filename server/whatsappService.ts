@@ -8,9 +8,21 @@ import type {
   ChatType,
   ConnectionState,
   MessageRecord,
+  SyncProgress,
+  SyncTrigger,
 } from '../shared/contracts.js'
 import type { ConfigStore } from './configStore.js'
 import type { MessageDatabase } from './database.js'
+import {
+  cryptoRandomSource,
+  evaluateHistoryPage,
+  LOAD_PROFILES,
+  sampleInteger,
+  sampleMilliseconds,
+  shuffled,
+  type GaussianRange,
+  type RandomSource,
+} from './loadControl.js'
 import { normalizeMessage } from './messageNormalizer.js'
 
 const { Client, LocalAuth } = WhatsAppWeb
@@ -19,8 +31,36 @@ type WhatsAppClient = WAWebJSTypes.Client
 type WhatsAppChat = WAWebJSTypes.Chat
 type WhatsAppMessage = WAWebJSTypes.Message
 
+interface SyncOptions {
+  trigger: SyncTrigger
+  forceRecent: boolean
+}
+
+interface SyncControl {
+  cancelled: boolean
+  paused: boolean
+}
+
+class SyncInterruptedError extends Error {}
+
 const RECONNECT_DELAYS = [2_000, 5_000, 10_000, 30_000, 60_000]
 const CONTACT_SERVERS = new Set(['c.us', 'lid', 's.whatsapp.net'])
+const HISTORY_CHUNK_SIZE = 50
+
+function idleSyncProgress(): SyncProgress {
+  return {
+    phase: 'idle',
+    trigger: null,
+    totalChats: 0,
+    completedChats: 0,
+    skippedChats: 0,
+    failedChats: 0,
+    currentChatId: null,
+    currentChatName: null,
+    currentChunkTarget: null,
+    nextActionAt: null,
+  }
+}
 
 export class WhatsAppService {
   private client: WhatsAppClient | null = null
@@ -36,12 +76,19 @@ export class WhatsAppService {
   private reconnectAttempt = 0
   private reconnectTimer: NodeJS.Timeout | null = null
   private syncPromise: Promise<void> | null = null
+  private syncControl: SyncControl | null = null
+  private syncProgress = idleSyncProgress()
+  private pendingAutomaticSync = false
+  private delayTimer: NodeJS.Timeout | null = null
+  private delayResolve: (() => void) | null = null
+  private pauseResolve: (() => void) | null = null
 
   constructor(
     private readonly configStore: ConfigStore,
     private readonly database: MessageDatabase,
     private readonly authDirectory: string,
     private readonly dataDirectory: string,
+    private readonly random: RandomSource = cryptoRandomSource,
   ) {
     this.collectedMessages = database.countMessages()
   }
@@ -63,6 +110,7 @@ export class WhatsAppService {
       selectedChats: this.configStore.get().selectedChatIds.length,
       dataDirectory: this.dataDirectory,
       warnings: [...this.warnings],
+      syncProgress: { ...this.syncProgress },
     }
   }
 
@@ -80,25 +128,66 @@ export class WhatsAppService {
   }
 
   onConfigUpdated(): void {
-    if (this.state === 'ready') {
-      void this.syncSelected().catch((error: unknown) => this.recordRecoverableError(error))
+    if (this.state === 'ready' || this.state === 'syncing') {
+      this.syncSelected({ trigger: 'automatic', forceRecent: false })
     }
   }
 
-  async syncSelected(): Promise<void> {
-    if (this.syncPromise) return this.syncPromise
-    if (!this.client || (this.state !== 'ready' && this.state !== 'syncing')) {
+  syncSelected(options: SyncOptions): boolean {
+    if (this.syncPromise) {
+      if (options.trigger === 'automatic') this.pendingAutomaticSync = true
+      return false
+    }
+    if (!this.client || this.state !== 'ready') {
       throw new Error('O WhatsApp ainda não está pronto para sincronizar.')
     }
 
-    this.syncPromise = this.performSync().finally(() => {
-      this.syncPromise = null
-    })
-    return this.syncPromise
+    const client = this.client
+    const control: SyncControl = { cancelled: false, paused: false }
+    this.syncControl = control
+    this.syncPromise = this.performSync(client, control, options)
+      .catch((error: unknown) => {
+        if (!(error instanceof SyncInterruptedError)) {
+          this.lastError = this.errorMessage(error)
+          this.message = 'A sincronização foi interrompida por um erro inesperado.'
+        }
+      })
+      .finally(() => {
+        this.finishSync(client, control)
+      })
+    return true
+  }
+
+  pauseSync(): void {
+    if (!this.syncControl || this.syncControl.cancelled || this.syncProgress.phase !== 'running') {
+      return
+    }
+    this.syncControl.paused = true
+    this.syncProgress.phase = 'paused'
+    this.syncProgress.nextActionAt = null
+    this.message = 'Sincronização pausada. A operação atual será concluída antes da pausa.'
+    this.interruptDelay()
+  }
+
+  resumeSync(): void {
+    if (!this.syncControl || this.syncProgress.phase !== 'paused') return
+    this.syncControl.paused = false
+    this.syncProgress.phase = 'running'
+    this.message = 'Sincronização retomada.'
+    this.pauseResolve?.()
+    this.pauseResolve = null
+  }
+
+  cancelSync(): void {
+    if (!this.syncControl) return
+    this.pendingAutomaticSync = false
+    this.signalSyncCancellation()
+    this.message = 'Cancelando sincronização após a operação atual…'
   }
 
   async resetSession(): Promise<void> {
     this.clearReconnectTimer()
+    this.signalSyncCancellation()
     await this.destroyClient()
     await rm(this.authDirectory, { recursive: true, force: true, maxRetries: 4 })
     this.reconnectAttempt = 0
@@ -109,6 +198,7 @@ export class WhatsAppService {
 
   async stop(): Promise<void> {
     this.clearReconnectTimer()
+    this.signalSyncCancellation()
     this.state = 'stopped'
     await this.destroyClient()
   }
@@ -149,12 +239,13 @@ export class WhatsAppService {
       this.message = 'WhatsApp conectado.'
       this.reconnectAttempt = 0
       void this.refreshChats()
-        .then(() => this.syncSelected())
+        .then(() => this.syncSelected({ trigger: 'automatic', forceRecent: false }))
         .catch((error: unknown) => this.recordRecoverableError(error))
     })
 
     client.on('auth_failure', (reason: string) => {
       if (this.client !== client) return
+      this.signalSyncCancellation()
       this.qrDataUrl = null
       this.state = 'invalid_session'
       this.message = 'A sessão salva não é mais válida.'
@@ -163,6 +254,7 @@ export class WhatsAppService {
 
     client.on('disconnected', (reason: string) => {
       if (this.client !== client) return
+      this.signalSyncCancellation()
       this.qrDataUrl = null
       if (reason === 'LOGOUT') {
         this.state = 'invalid_session'
@@ -197,47 +289,227 @@ export class WhatsAppService {
     }
   }
 
-  private async performSync(): Promise<void> {
-    const client = this.client
-    if (!client) return
-
+  private async performSync(
+    client: WhatsAppClient,
+    control: SyncControl,
+    options: SyncOptions,
+  ): Promise<void> {
     const config = this.configStore.get()
+    const profile = LOAD_PROFILES[config.sync.loadProfile]
     const cutoff = Math.floor(Date.now() / 1000) - config.sync.lookbackHours * 60 * 60
+    const chatIds = shuffled(config.selectedChatIds, this.random)
+    let chatsInBatch = 0
+    let batchSize = sampleInteger(profile.chatsPerBatch, this.random)
+
     this.state = 'syncing'
-    this.message = 'Buscando mensagens recentes dos chats selecionados…'
+    this.message = 'Preparando a busca controlada de mensagens…'
+    this.lastError = null
     this.warnings = []
+    this.syncProgress = {
+      ...idleSyncProgress(),
+      phase: 'running',
+      trigger: options.trigger,
+      totalChats: chatIds.length,
+    }
 
-    try {
-      for (const chatId of config.selectedChatIds) {
-        if (this.client !== client) return
-        const chat = this.chats.get(chatId)
-        if (!chat) continue
-
-        const checkpoint = this.database.getCheckpoint(chatId)
-        const messages = await chat.fetchMessages({ limit: config.sync.maxMessagesPerChat })
-
-        if (
-          checkpoint &&
-          messages.length === config.sync.maxMessagesPerChat &&
-          !messages.some((item) => item.id._serialized === checkpoint.lastMessageId) &&
-          (messages[0]?.timestamp ?? 0) > checkpoint.lastTimestampUnix
-        ) {
-          this.warnings.push(
-            `${chat.name}: pode haver uma lacuna anterior às ${config.sync.maxMessagesPerChat} mensagens recuperadas.`,
-          )
-        }
-
-        for (const item of messages) {
-          if (item.timestamp < cutoff) continue
-          await this.persistMessage(item, chat)
-        }
+    for (const chatId of chatIds) {
+      this.assertSyncActive(client, control)
+      const chat = this.chats.get(chatId)
+      if (!chat) {
+        this.syncProgress.skippedChats += 1
+        continue
       }
 
-      this.lastSyncAt = new Date().toISOString()
-      this.message = 'Sincronização concluída.'
-    } finally {
-      if (this.client === client && this.state === 'syncing') this.state = 'ready'
+      const priorState = this.database.getChatSyncState(chatId)
+      const inCooldown =
+        priorState !== null &&
+        Date.now() - Date.parse(priorState.lastAttemptAt) < profile.automaticCooldownMs
+      if (!options.forceRecent && inCooldown) {
+        this.syncProgress.skippedChats += 1
+        continue
+      }
+
+      this.syncProgress.currentChatId = chatId
+      this.syncProgress.currentChatName = chat.name || chat.id.user
+
+      if (chatsInBatch >= batchSize) {
+        this.message = 'Pausa de carga antes de continuar a fila…'
+        await this.waitForPacing(profile.periodicPauseMs, client, control)
+        chatsInBatch = 0
+        batchSize = sampleInteger(profile.chatsPerBatch, this.random)
+      }
+
+      this.message = `Aguardando para consultar ${this.syncProgress.currentChatName}…`
+      await this.waitForPacing(profile.betweenChatsMs, client, control)
+      this.database.markChatSyncAttempt(chatId, new Date().toISOString())
+
+      try {
+        this.message = `Consultando ${this.syncProgress.currentChatName}…`
+        await this.syncChat(
+          chat,
+          cutoff,
+          config.sync.maxMessagesPerChat,
+          profile.betweenChunksMs,
+          client,
+          control,
+        )
+        this.database.markChatSyncCompleted(chatId, new Date().toISOString())
+        this.syncProgress.completedChats += 1
+        chatsInBatch += 1
+      } catch (error) {
+        if (error instanceof SyncInterruptedError) {
+          this.database.markChatSyncCancelled(chatId)
+          throw error
+        }
+        const failure = this.errorMessage(error)
+        this.database.markChatSyncFailed(chatId, failure)
+        this.syncProgress.failedChats += 1
+        chatsInBatch += 1
+        this.warnings.push(`${chat.name || chat.id.user}: ${failure}`)
+      } finally {
+        this.syncProgress.currentChunkTarget = null
+      }
     }
+
+    this.assertSyncActive(client, control)
+    this.lastSyncAt = new Date().toISOString()
+    this.message = 'Sincronização concluída.'
+  }
+
+  private async syncChat(
+    chat: WhatsAppChat,
+    cutoff: number,
+    maximum: number,
+    betweenChunksMs: GaussianRange,
+    client: WhatsAppClient,
+    control: SyncControl,
+  ): Promise<void> {
+    const checkpoint = this.database.getCheckpoint(chat.id._serialized)
+    const seenMessageIds = new Set<string>()
+    let target = Math.min(HISTORY_CHUNK_SIZE, maximum)
+
+    while (true) {
+      this.assertSyncActive(client, control)
+      await this.waitUntilRunnable(control)
+      this.assertSyncActive(client, control)
+      this.syncProgress.currentChunkTarget = target
+
+      const messages = await chat.fetchMessages({ limit: target })
+      this.assertSyncActive(client, control)
+
+      for (const item of messages) {
+        this.assertSyncActive(client, control)
+        const messageId = item.id._serialized
+        if (seenMessageIds.has(messageId)) continue
+        seenMessageIds.add(messageId)
+        if (item.timestamp < cutoff) continue
+        await this.persistMessage(item, chat)
+      }
+
+      const decision = evaluateHistoryPage({
+        messageIds: messages.map((item) => item.id._serialized),
+        timestamps: messages.map((item) => item.timestamp),
+        returnedCount: messages.length,
+        target,
+        maximum,
+        cutoffTimestamp: cutoff,
+        checkpoint,
+      })
+
+      if (decision.gapRisk) {
+        this.warnings.push(
+          `${chat.name || chat.id.user}: pode haver uma lacuna anterior às ${maximum} mensagens recuperadas.`,
+        )
+      }
+      if (decision.stop) return
+
+      this.message = `Pausa antes do próximo bloco de ${chat.name || chat.id.user}…`
+      await this.waitForPacing(betweenChunksMs, client, control)
+      target = Math.min(target + HISTORY_CHUNK_SIZE, maximum)
+    }
+  }
+
+  private async waitForPacing(
+    range: GaussianRange,
+    client: WhatsAppClient,
+    control: SyncControl,
+  ): Promise<void> {
+    await this.waitUntilRunnable(control)
+    this.assertSyncActive(client, control)
+    const milliseconds = sampleMilliseconds(range, this.random)
+    this.syncProgress.nextActionAt = new Date(Date.now() + milliseconds).toISOString()
+
+    await new Promise<void>((resolve) => {
+      this.delayResolve = resolve
+      this.delayTimer = setTimeout(resolve, milliseconds)
+    })
+
+    this.clearDelay()
+    await this.waitUntilRunnable(control)
+    this.assertSyncActive(client, control)
+  }
+
+  private async waitUntilRunnable(control: SyncControl): Promise<void> {
+    while (control.paused && !control.cancelled) {
+      await new Promise<void>((resolve) => {
+        this.pauseResolve = resolve
+      })
+    }
+  }
+
+  private assertSyncActive(client: WhatsAppClient, control: SyncControl): void {
+    if (control.cancelled || this.client !== client) throw new SyncInterruptedError()
+  }
+
+  private finishSync(client: WhatsAppClient, control: SyncControl): void {
+    if (this.syncControl !== control) return
+    const wasCancelled = control.cancelled
+    this.clearDelay()
+    this.pauseResolve?.()
+    this.pauseResolve = null
+    this.syncControl = null
+    this.syncPromise = null
+    this.syncProgress = idleSyncProgress()
+
+    if (this.client === client && this.state === 'syncing') {
+      this.state = 'ready'
+      if (wasCancelled)
+        this.message = 'Sincronização cancelada. Os dados já coletados foram mantidos.'
+    }
+
+    if (this.pendingAutomaticSync && this.client === client && this.state === 'ready') {
+      this.pendingAutomaticSync = false
+      queueMicrotask(() => {
+        if (this.client === client && this.state === 'ready') {
+          this.syncSelected({ trigger: 'automatic', forceRecent: false })
+        }
+      })
+    }
+  }
+
+  private signalSyncCancellation(): void {
+    if (!this.syncControl) return
+    this.syncControl.cancelled = true
+    this.syncControl.paused = false
+    this.interruptDelay()
+    this.pauseResolve?.()
+    this.pauseResolve = null
+  }
+
+  private interruptDelay(): void {
+    if (this.delayTimer) clearTimeout(this.delayTimer)
+    this.delayTimer = null
+    const resolve = this.delayResolve
+    this.delayResolve = null
+    resolve?.()
+    this.syncProgress.nextActionAt = null
+  }
+
+  private clearDelay(): void {
+    if (this.delayTimer) clearTimeout(this.delayTimer)
+    this.delayTimer = null
+    this.delayResolve = null
+    this.syncProgress.nextActionAt = null
   }
 
   private async handleRealtimeMessage(message: WhatsAppMessage): Promise<void> {
@@ -337,6 +609,7 @@ export class WhatsAppService {
   }
 
   private async destroyClient(): Promise<void> {
+    this.signalSyncCancellation()
     const client = this.client
     this.client = null
     if (!client) return

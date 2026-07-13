@@ -2,7 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import path from 'node:path'
 import { access } from 'node:fs/promises'
 import { ZodError } from 'zod'
-import { appConfigSchema, exportRequestSchema } from '../shared/contracts.js'
+import { appConfigSchema, exportRequestSchema, syncRequestSchema } from '../shared/contracts.js'
 import type { ConfigStore } from './configStore.js'
 import type { ExportService } from './exportService.js'
 import type { WhatsAppService } from './whatsappService.js'
@@ -66,13 +66,32 @@ export function createApp(dependencies: AppDependencies): express.Express {
     }
   })
 
-  app.post('/api/sync', async (_request, response, next) => {
+  app.post('/api/sync', (request, response, next) => {
     try {
-      await dependencies.whatsappService.syncSelected()
-      response.json(dependencies.whatsappService.getStatus())
+      const syncRequest = syncRequestSchema.parse(request.body ?? {})
+      dependencies.whatsappService.syncSelected({
+        trigger: 'manual',
+        forceRecent: syncRequest.forceRecent,
+      })
+      response.status(202).json(dependencies.whatsappService.getStatus())
     } catch (error) {
       next(error)
     }
+  })
+
+  app.post('/api/sync/pause', (_request, response) => {
+    dependencies.whatsappService.pauseSync()
+    response.json(dependencies.whatsappService.getStatus())
+  })
+
+  app.post('/api/sync/resume', (_request, response) => {
+    dependencies.whatsappService.resumeSync()
+    response.json(dependencies.whatsappService.getStatus())
+  })
+
+  app.post('/api/sync/cancel', (_request, response) => {
+    dependencies.whatsappService.cancelSync()
+    response.json(dependencies.whatsappService.getStatus())
   })
 
   app.post('/api/session/reset', async (_request, response, next) => {

@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, shallowReadonly, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, shallowReadonly, shallowRef } from 'vue'
 import {
   createDefaultConfig,
   type AppConfig,
@@ -21,6 +21,18 @@ const initialStatus: AppStatus = {
   selectedChats: 0,
   dataDirectory: '',
   warnings: [],
+  syncProgress: {
+    phase: 'idle',
+    trigger: null,
+    totalChats: 0,
+    completedChats: 0,
+    skippedChats: 0,
+    failedChats: 0,
+    currentChatId: null,
+    currentChatName: null,
+    currentChunkTarget: null,
+    nextActionAt: null,
+  },
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -44,10 +56,10 @@ export function useReaderApp() {
   const error = shallowRef<string | null>(null)
   const loading = shallowRef(true)
   const saving = shallowRef(false)
-  const syncing = shallowRef(false)
   const exporting = shallowRef(false)
   const lastExport = shallowRef<ExportResult | null>(null)
   let pollTimer: number | null = null
+  const syncing = computed(() => status.value.syncProgress.phase !== 'idle')
 
   async function run<T>(operation: () => Promise<T>): Promise<T | null> {
     error.value = null
@@ -134,10 +146,20 @@ export function useReaderApp() {
   }
 
   async function syncNow(): Promise<void> {
-    syncing.value = true
-    const result = await run(() => requestJson<AppStatus>('/api/sync', { method: 'POST' }))
+    const result = await run(() =>
+      requestJson<AppStatus>('/api/sync', {
+        method: 'POST',
+        body: JSON.stringify({ forceRecent: true }),
+      }),
+    )
     if (result) status.value = result
-    syncing.value = false
+  }
+
+  async function controlSync(action: 'pause' | 'resume' | 'cancel'): Promise<void> {
+    const result = await run(() =>
+      requestJson<AppStatus>(`/api/sync/${action}`, { method: 'POST' }),
+    )
+    if (result) status.value = result
   }
 
   async function resetSession(): Promise<void> {
@@ -182,7 +204,7 @@ export function useReaderApp() {
     error: shallowReadonly(error),
     loading: shallowReadonly(loading),
     saving: shallowReadonly(saving),
-    syncing: shallowReadonly(syncing),
+    syncing,
     exporting: shallowReadonly(exporting),
     lastExport: shallowReadonly(lastExport),
     refreshChats,
@@ -193,6 +215,9 @@ export function useReaderApp() {
     applySources,
     saveConfig,
     syncNow,
+    pauseSync: () => controlSync('pause'),
+    resumeSync: () => controlSync('resume'),
+    cancelSync: () => controlSync('cancel'),
     resetSession,
     createExport,
     openDataDirectory,

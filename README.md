@@ -38,7 +38,8 @@ Nesse modo, a aplicação abre em `http://127.0.0.1:3210`.
 2. Atualize a lista e marque somente as conversas autorizadas.
 3. Opcionalmente, associe tags locais ou use regras `exact`, `contains` e `tag` para marcar candidatos.
 4. Configure a janela, por exemplo, últimas 24 horas e no máximo 500 mensagens por conversa.
-5. Salve, sincronize e clique em **Baixar JSONL**.
+5. Escolha o ritmo **Conservador** ou **Balanceado**.
+6. Salve, sincronize e clique em **Baixar JSONL**.
 
 As regras nunca autorizam sozinhas um chat novo: somente os IDs confirmados nos checkboxes formam a allowlist. Tags são rótulos locais e não são enviadas ao WhatsApp.
 
@@ -73,6 +74,14 @@ Cada linha do JSONL é um objeto independente:
 
 Mídias sem legenda, chamadas, reações, enquetes, status, broadcasts, canais, mensagens de sistema e conteúdo vazio são ignorados. Para mídia com legenda, somente o texto da legenda é preservado.
 
+## Controle de carga
+
+A sincronização histórica processa um chat por vez e amplia a busca em blocos de 50 mensagens. Entre blocos e chats são aplicados intervalos randômicos limitados, com pausas maiores após pequenos lotes. O perfil **Conservador** é o padrão e usa intervalos e cooldowns maiores.
+
+Sincronizações automáticas após conexão, reconexão ou mudança de configuração ignoram temporariamente chats consultados recentemente. A sincronização manual pode reconsultá-los após confirmação, mas continua respeitando os intervalos. Filas longas podem ser pausadas, retomadas ou canceladas sem remover dados já coletados.
+
+Esse controle reduz rajadas locais; ele não simula de forma garantida uma pessoa, não contorna regras do WhatsApp e não elimina o risco associado ao cliente não oficial.
+
 ## Sessão e reconexão
 
 A sessão usa `LocalAuth` e persiste entre reinicializações. Desconexões transitórias usam tentativas progressivas. Se a sessão for invalidada ou removida pelo telefone, a interface pede confirmação antes de apagar os arquivos locais e gerar outro QR.
@@ -82,4 +91,4 @@ A sessão usa `LocalAuth` e persiste entre reinicializações. Desconexões tran
 - Um telefone e uma sessão por máquina.
 - Sem integração com LLM nesta fase.
 - Sem Electron, nuvem, servidor público ou autenticação multiusuário.
-- `fetchMessages()` aceita limite, mas não uma data inicial; a aplicação busca até o limite e aplica o corte temporal localmente.
+- `fetchMessages()` aceita limite, mas não uma data inicial; a aplicação amplia o limite gradualmente e aplica o corte temporal localmente.

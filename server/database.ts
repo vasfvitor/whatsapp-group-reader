@@ -17,6 +17,16 @@ export interface Checkpoint {
   lastMessageId: string
 }
 
+export type ChatSyncStatus = 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface ChatSyncState {
+  chatId: string
+  lastAttemptAt: string
+  lastCompletedAt: string | null
+  lastStatus: ChatSyncStatus
+  lastError: string | null
+}
+
 export class MessageDatabase {
   private readonly database: Database.Database
   private readonly insertMessage: Database.Statement
@@ -48,6 +58,16 @@ export class MessageDatabase {
         last_timestamp_unix INTEGER NOT NULL,
         last_message_id TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS chat_sync_state (
+        chat_id TEXT PRIMARY KEY,
+        last_attempt_at TEXT NOT NULL,
+        last_completed_at TEXT,
+        last_status TEXT NOT NULL CHECK (
+          last_status IN ('running', 'completed', 'failed', 'cancelled')
+        ),
+        last_error TEXT
       );
     `)
 
@@ -101,6 +121,74 @@ export class MessageDatabase {
           lastMessageId: row.last_message_id,
         }
       : null
+  }
+
+  getChatSyncState(chatId: string): ChatSyncState | null {
+    const row = this.database
+      .prepare(
+        `SELECT chat_id, last_attempt_at, last_completed_at, last_status, last_error
+         FROM chat_sync_state WHERE chat_id = ?`,
+      )
+      .get(chatId) as
+      | {
+          chat_id: string
+          last_attempt_at: string
+          last_completed_at: string | null
+          last_status: ChatSyncStatus
+          last_error: string | null
+        }
+      | undefined
+
+    return row
+      ? {
+          chatId: row.chat_id,
+          lastAttemptAt: row.last_attempt_at,
+          lastCompletedAt: row.last_completed_at,
+          lastStatus: row.last_status,
+          lastError: row.last_error,
+        }
+      : null
+  }
+
+  markChatSyncAttempt(chatId: string, attemptedAt: string): void {
+    this.database
+      .prepare(
+        `INSERT INTO chat_sync_state (chat_id, last_attempt_at, last_status, last_error)
+         VALUES (?, ?, 'running', NULL)
+         ON CONFLICT(chat_id) DO UPDATE SET
+           last_attempt_at = excluded.last_attempt_at,
+           last_status = 'running',
+           last_error = NULL`,
+      )
+      .run(chatId, attemptedAt)
+  }
+
+  markChatSyncCompleted(chatId: string, completedAt: string): void {
+    this.database
+      .prepare(
+        `UPDATE chat_sync_state SET
+           last_completed_at = ?,
+           last_status = 'completed',
+           last_error = NULL
+         WHERE chat_id = ?`,
+      )
+      .run(completedAt, chatId)
+  }
+
+  markChatSyncFailed(chatId: string, error: string): void {
+    this.database
+      .prepare(
+        `UPDATE chat_sync_state SET last_status = 'failed', last_error = ? WHERE chat_id = ?`,
+      )
+      .run(error, chatId)
+  }
+
+  markChatSyncCancelled(chatId: string): void {
+    this.database
+      .prepare(
+        `UPDATE chat_sync_state SET last_status = 'cancelled', last_error = NULL WHERE chat_id = ?`,
+      )
+      .run(chatId)
   }
 
   countMessages(): number {

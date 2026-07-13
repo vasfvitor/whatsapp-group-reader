@@ -61,4 +61,31 @@ describe('MessageDatabase', () => {
     expect(result).toHaveLength(4)
     expect(result.map((message) => message.messageId)).toEqual(['a-200', 'b-200', 'a-300', 'b-300'])
   })
+
+  it('persists sync attempts, completion, failures and cancellation per chat', () => {
+    database = new MessageDatabase(':memory:')
+    const attemptedAt = '2026-07-13T12:00:00.000Z'
+    const completedAt = '2026-07-13T12:01:00.000Z'
+
+    database.markChatSyncAttempt('chat@g.us', attemptedAt)
+    expect(database.getChatSyncState('chat@g.us')).toEqual({
+      chatId: 'chat@g.us',
+      lastAttemptAt: attemptedAt,
+      lastCompletedAt: null,
+      lastStatus: 'running',
+      lastError: null,
+    })
+
+    database.markChatSyncCompleted('chat@g.us', completedAt)
+    expect(database.getChatSyncState('chat@g.us')?.lastStatus).toBe('completed')
+    expect(database.getChatSyncState('chat@g.us')?.lastCompletedAt).toBe(completedAt)
+
+    database.markChatSyncAttempt('chat@g.us', '2026-07-13T12:02:00.000Z')
+    database.markChatSyncFailed('chat@g.us', 'falhou')
+    expect(database.getChatSyncState('chat@g.us')?.lastError).toBe('falhou')
+
+    database.markChatSyncAttempt('chat@g.us', '2026-07-13T12:03:00.000Z')
+    database.markChatSyncCancelled('chat@g.us')
+    expect(database.getChatSyncState('chat@g.us')?.lastStatus).toBe('cancelled')
+  })
 })

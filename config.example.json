@@ -8,6 +8,7 @@
   "chatTags": {},
   "sync": {
     "lookbackHours": 24,
-    "maxMessagesPerChat": 500
+    "maxMessagesPerChat": 500,
+    "loadProfile": "conservative"
   }
 }

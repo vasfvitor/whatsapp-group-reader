@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const sourceTypeSchema = z.enum(['exact', 'contains', 'tag'])
+export const loadProfileSchema = z.enum(['balanced', 'conservative'])
 
 export const sourceSchema = z.object({
   type: sourceTypeSchema,
@@ -14,6 +15,7 @@ export const syncSettingsSchema = z.object({
     .min(1)
     .max(24 * 365),
   maxMessagesPerChat: z.number().int().min(1).max(1000),
+  loadProfile: loadProfileSchema.default('conservative'),
 })
 
 export const appConfigSchema = z.object({
@@ -23,7 +25,12 @@ export const appConfigSchema = z.object({
   sync: syncSettingsSchema.default({
     lookbackHours: 24,
     maxMessagesPerChat: 500,
+    loadProfile: 'conservative',
   }),
+})
+
+export const syncRequestSchema = z.object({
+  forceRecent: z.boolean().default(false),
 })
 
 export const exportRequestSchema = z
@@ -41,6 +48,7 @@ export const exportRequestSchema = z
 export type SourceType = z.infer<typeof sourceTypeSchema>
 export type Source = z.infer<typeof sourceSchema>
 export type SyncSettings = z.infer<typeof syncSettingsSchema>
+export type LoadProfile = z.infer<typeof loadProfileSchema>
 export type AppConfig = z.infer<typeof appConfigSchema>
 export type ExportRequest = z.infer<typeof exportRequestSchema>
 
@@ -74,6 +82,22 @@ export type ConnectionState =
   | 'invalid_session'
   | 'stopped'
 
+export type SyncPhase = 'idle' | 'running' | 'paused'
+export type SyncTrigger = 'automatic' | 'manual'
+
+export interface SyncProgress {
+  phase: SyncPhase
+  trigger: SyncTrigger | null
+  totalChats: number
+  completedChats: number
+  skippedChats: number
+  failedChats: number
+  currentChatId: string | null
+  currentChatName: string | null
+  currentChunkTarget: number | null
+  nextActionAt: string | null
+}
+
 export interface AppStatus {
   state: ConnectionState
   qrDataUrl: string | null
@@ -84,6 +108,7 @@ export interface AppStatus {
   selectedChats: number
   dataDirectory: string
   warnings: string[]
+  syncProgress: SyncProgress
 }
 
 export interface ExportResult {
@@ -101,6 +126,7 @@ export function createDefaultConfig(): AppConfig {
     sync: {
       lookbackHours: 24,
       maxMessagesPerChat: 500,
+      loadProfile: 'conservative',
     },
   }
 }
