@@ -2,7 +2,12 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import path from 'node:path'
 import { access } from 'node:fs/promises'
 import { ZodError } from 'zod'
-import { appConfigSchema, exportRequestSchema, syncRequestSchema } from '../shared/contracts.js'
+import {
+  appConfigSchema,
+  exportRequestSchema,
+  operationalLogQuerySchema,
+  syncRequestSchema,
+} from '../shared/contracts.js'
 import type { ConfigStore } from './configStore.js'
 import type { ExportService } from './exportService.js'
 import type { WhatsAppService } from './whatsappService.js'
@@ -40,6 +45,15 @@ export function createApp(dependencies: AppDependencies): express.Express {
 
   app.get('/api/status', (_request, response) => {
     response.json(dependencies.whatsappService.getStatus())
+  })
+
+  app.get('/api/debug-log', (request, response, next) => {
+    try {
+      const { after } = operationalLogQuerySchema.parse(request.query)
+      response.json(dependencies.whatsappService.getOperationalLog(after))
+    } catch (error) {
+      next(error)
+    }
   })
 
   app.get('/api/config', (_request, response) => {

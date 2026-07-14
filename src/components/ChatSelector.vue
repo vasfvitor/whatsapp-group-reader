@@ -23,7 +23,9 @@ const visibleChats = computed(() => {
   return props.chats.filter((chat) => {
     const matchesType = chatType.value === 'all' || chat.type === chatType.value
     const matchesQuery =
-      !normalizedQuery || chat.name.toLocaleLowerCase('pt-BR').includes(normalizedQuery)
+      !normalizedQuery ||
+      chat.name.toLocaleLowerCase('pt-BR').includes(normalizedQuery) ||
+      chat.phoneNumber?.toLocaleLowerCase('pt-BR').includes(normalizedQuery)
     return matchesType && matchesQuery
   })
 })
@@ -113,8 +115,14 @@ function updateTags(chatId: string, rawValue: string): void {
             @change="toggleChat(chat.id, ($event.target as HTMLInputElement).checked)"
           />
           <span class="chat-copy">
-            <strong>{{ chat.name }}</strong>
-            <small>{{ chat.type === 'group' ? 'Grupo' : 'Contato' }}</small>
+            <span class="chat-title">
+              <strong>{{ chat.name }}</strong>
+              <span v-if="chat.isSavedContact" class="metadata-badge">Salvo</span>
+              <span v-if="chat.isBusiness" class="metadata-badge">Comercial</span>
+            </span>
+            <small>
+              {{ chat.type === 'group' ? 'Grupo' : chat.phoneNumber || 'Contato' }}
+            </small>
           </span>
         </label>
         <label class="tag-field">
@@ -140,7 +148,6 @@ function updateTags(chatId: string, rawValue: string): void {
 <style scoped>
 .panel-heading,
 .bulk-actions,
-.chat-row,
 .selector-tools {
   display: flex;
   align-items: center;
@@ -178,7 +185,7 @@ function updateTags(chatId: string, rawValue: string): void {
 }
 
 .chat-list {
-  max-height: 540px;
+  max-height: 620px;
   overflow: auto;
   margin-top: 0.75rem;
   border: 1px solid var(--border);
@@ -186,9 +193,12 @@ function updateTags(chatId: string, rawValue: string): void {
 }
 
 .chat-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(160px, 220px);
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 1rem;
+  gap: 0.75rem;
+  padding: 0.5rem 0.7rem;
   border-bottom: 1px solid var(--border);
 }
 
@@ -199,7 +209,7 @@ function updateTags(chatId: string, rawValue: string): void {
 .chat-choice {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.55rem;
   min-width: 0;
 }
 
@@ -215,10 +225,27 @@ function updateTags(chatId: string, rawValue: string): void {
   min-width: 0;
 }
 
+.chat-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
 .chat-copy strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.metadata-badge {
+  flex: none;
+  border-radius: 999px;
+  padding: 0.12rem 0.35rem;
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-size: 0.62rem;
+  font-weight: 700;
 }
 
 .chat-copy small,
@@ -229,24 +256,27 @@ function updateTags(chatId: string, rawValue: string): void {
 .tag-field {
   display: grid;
   gap: 0.25rem;
-  width: min(40%, 240px);
+  width: 100%;
   font-size: 0.75rem;
 }
 
 .tag-field input {
-  padding: 0.55rem 0.7rem;
+  padding: 0.4rem 0.55rem;
 }
 
 @media (max-width: 700px) {
   .panel-heading,
-  .selector-tools,
-  .chat-row {
+  .selector-tools {
     align-items: stretch;
     flex-direction: column;
   }
 
   .tag-field {
     width: 100%;
+  }
+
+  .chat-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

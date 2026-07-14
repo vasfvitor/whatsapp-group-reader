@@ -5,6 +5,7 @@ import SourceRulesPanel from './components/SourceRulesPanel.vue'
 import SyncSettingsForm from './components/SyncSettingsForm.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import SyncProgressPanel from './components/SyncProgressPanel.vue'
+import DebugLogPanel from './components/DebugLogPanel.vue'
 import { useReaderApp } from './composables/useReaderApp'
 
 const reader = useReaderApp()
@@ -64,7 +65,7 @@ function confirmForcedSync(): void {
       <div class="save-bar">
         <div>
           <strong>{{ reader.config.value.selectedChatIds.length }} conversas selecionadas</strong>
-          <span>Salve antes de sincronizar.</span>
+          <span>Esta ação salva as escolhas e inicia a sincronização automática.</span>
         </div>
         <button
           class="button button--primary"
@@ -72,7 +73,7 @@ function confirmForcedSync(): void {
           :disabled="reader.saving.value"
           @click="reader.saveConfig"
         >
-          {{ reader.saving.value ? 'Salvando…' : 'Salvar seleção e configurações' }}
+          {{ reader.saving.value ? 'Salvando e iniciando…' : 'Salvar e iniciar sincronização' }}
         </button>
       </div>
 
@@ -83,6 +84,8 @@ function confirmForcedSync(): void {
         @resume="reader.resumeSync"
         @cancel="reader.cancelSync"
       />
+
+      <DebugLogPanel :entries="reader.debugLog.value" />
 
       <ExportPanel
         :settings="reader.config.value.sync"

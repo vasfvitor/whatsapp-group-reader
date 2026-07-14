@@ -33,6 +33,10 @@ export const syncRequestSchema = z.object({
   forceRecent: z.boolean().default(false),
 })
 
+export const operationalLogQuerySchema = z.object({
+  after: z.coerce.number().int().min(0).default(0),
+})
+
 export const exportRequestSchema = z
   .object({
     from: z.iso.datetime({ offset: true }),
@@ -58,6 +62,9 @@ export interface ChatSummary {
   id: string
   name: string
   type: ChatType
+  phoneNumber: string | null
+  isSavedContact: boolean
+  isBusiness: boolean
   tags: string[]
   selected: boolean
 }
@@ -94,7 +101,15 @@ export interface SyncProgress {
   failedChats: number
   currentChatId: string | null
   currentChatName: string | null
+  currentChatPosition: number | null
   currentChunkTarget: number | null
+  messageLimitPerChat: number
+  currentFetchedMessages: number
+  currentEligibleMessages: number
+  currentInsertedMessages: number
+  totalFetchedMessages: number
+  totalEligibleMessages: number
+  totalInsertedMessages: number
   nextActionAt: string | null
 }
 
@@ -108,9 +123,34 @@ export function createIdleSyncProgress(): SyncProgress {
     failedChats: 0,
     currentChatId: null,
     currentChatName: null,
+    currentChatPosition: null,
     currentChunkTarget: null,
+    messageLimitPerChat: 0,
+    currentFetchedMessages: 0,
+    currentEligibleMessages: 0,
+    currentInsertedMessages: 0,
+    totalFetchedMessages: 0,
+    totalEligibleMessages: 0,
+    totalInsertedMessages: 0,
     nextActionAt: null,
   }
+}
+
+export type OperationalLogLevel = 'info' | 'warn' | 'error'
+export type OperationalLogDetails = Record<string, string | number | boolean>
+
+export interface OperationalLogEntry {
+  sequence: number
+  timestamp: string
+  level: OperationalLogLevel
+  event: string
+  message: string
+  details: OperationalLogDetails
+}
+
+export interface OperationalLogResponse {
+  entries: OperationalLogEntry[]
+  cursor: number
 }
 
 export interface AppStatus {

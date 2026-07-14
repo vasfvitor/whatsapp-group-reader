@@ -28,12 +28,15 @@ import {
   type RandomSource,
 } from './loadControl.js'
 import { normalizeMessage } from './messageNormalizer.js'
+import { OperationalLogBuffer } from './operationalLog.js'
 
 const { Client, LocalAuth } = WhatsAppWeb
 
 type WhatsAppClient = WAWebJSTypes.Client
 type WhatsAppChat = WAWebJSTypes.Chat
+type WhatsAppContact = WAWebJSTypes.Contact
 type WhatsAppMessage = WAWebJSTypes.Message
+type PersistOutcome = 'ignored' | 'duplicate' | 'inserted'
 
 interface SyncOptions {
   trigger: SyncTrigger
@@ -45,6 +48,13 @@ interface SyncControl {
   paused: boolean
 }
 
+interface ContactMetadata {
+  name: string
+  phoneNumber: string
+  isSavedContact: boolean
+  isBusiness: boolean
+}
+
 class SyncInterruptedError extends Error {}
 
 const CONTACT_SERVERS = new Set(['c.us', 'lid', 's.whatsapp.net'])
@@ -54,11 +64,20 @@ function chatDisplayName(chat: WhatsAppChat): string {
   return chat.name || chat.id.user
 }
 
+function operationalChatName(chat: WhatsAppChat): string {
+  const name = chat.name?.trim()
+  const looksLikePhoneNumber = name && /^\+?[\d\s().-]{7,}$/.test(name)
+  if (name && !looksLikePhoneNumber) return name
+  return chat.isGroup ? 'Grupo sem nome' : 'Contato sem nome'
+}
+
 export class WhatsAppService {
   private client: WhatsAppClient | null = null
   private clientAbortController: AbortController | null = null
   private readonly chats = new Map<string, WhatsAppChat>()
+  private readonly contactMetadata = new Map<string, ContactMetadata>()
   private readonly authors = new Map<string, string>()
+  private readonly operationalLog = new OperationalLogBuffer()
   private state: ConnectionState = 'stopped'
   private qrDataUrl: string | null = null
   private message = 'Aplicação iniciada.'
@@ -108,6 +127,10 @@ export class WhatsAppService {
     }
   }
 
+  getOperationalLog(after = 0) {
+    return this.operationalLog.read(after)
+  }
+
   async getChats(refresh = false): Promise<ChatSummary[]> {
     if (refresh && !this.syncPromise) await this.refreshChats()
     const config = this.configStore.get()
@@ -151,6 +174,7 @@ export class WhatsAppService {
         if (!(error instanceof SyncInterruptedError)) {
           this.lastError = this.errorMessage(error)
           this.message = 'A sincronização foi interrompida por um erro inesperado.'
+          this.operationalLog.add('error', 'sync_failed', this.message)
         }
       })
       .finally(() => {
@@ -304,13 +328,36 @@ export class WhatsAppService {
       signal,
       null,
       'Atualizando a lista de conversas',
-    ).then((chats) => {
+    ).then(async (chats) => {
+      let contacts: WhatsAppContact[] = []
+      try {
+        contacts = await this.readWithRetry(
+          () => client.getContacts(),
+          profile.readRetry,
+          client,
+          signal,
+          null,
+          'Atualizando os nomes dos contatos',
+        )
+      } catch {
+        this.assertReadActive(client, signal, null)
+        this.operationalLog.add(
+          'warn',
+          'contact_metadata_unavailable',
+          'Nomes dos contatos indisponíveis; mantendo os números da lista.',
+        )
+      }
       if (this.client !== client) throw new SyncInterruptedError()
       this.chats.clear()
+      this.contactMetadata.clear()
+      for (const contact of contacts) this.cacheContactMetadata(contact)
       for (const chat of chats) {
         if (this.chatType(chat)) this.chats.set(chat.id._serialized, chat)
       }
       if (this.state === 'ready') this.message = 'Lista de conversas atualizada.'
+      this.operationalLog.add('info', 'chats_refreshed', 'Lista de conversas atualizada.', {
+        chats: this.chats.size,
+      })
     })
 
     this.refreshPromise = refresh.finally(() => {
@@ -341,13 +388,25 @@ export class WhatsAppService {
       phase: 'running',
       trigger: options.trigger,
       totalChats: chatIds.length,
+      messageLimitPerChat: config.sync.maxMessagesPerChat,
     }
+    this.operationalLog.add('info', 'sync_started', 'Sincronização iniciada.', {
+      chats: chatIds.length,
+      profile: config.sync.loadProfile,
+      trigger: options.trigger,
+      forceRecent: options.forceRecent,
+      messageLimitPerChat: config.sync.maxMessagesPerChat,
+    })
 
-    for (const chatId of chatIds) {
+    for (const [chatIndex, chatId] of chatIds.entries()) {
       this.assertSyncActive(client, control)
       const chat = this.chats.get(chatId)
       if (!chat) {
         this.syncProgress.skippedChats += 1
+        this.operationalLog.add('warn', 'chat_missing', 'Conversa não encontrada no cache.', {
+          position: chatIndex + 1,
+          totalChats: chatIds.length,
+        })
         continue
       }
 
@@ -357,11 +416,27 @@ export class WhatsAppService {
         Date.now() - Date.parse(priorState.lastAttemptAt) < profile.automaticCooldownMs
       if (!options.forceRecent && inCooldown) {
         this.syncProgress.skippedChats += 1
+        this.operationalLog.add('info', 'chat_skipped', 'Conversa ignorada por cooldown.', {
+          chatName: operationalChatName(chat),
+          position: chatIndex + 1,
+          totalChats: chatIds.length,
+        })
         continue
       }
 
       this.syncProgress.currentChatId = chatId
       this.syncProgress.currentChatName = chatDisplayName(chat)
+      this.syncProgress.currentChatPosition = chatIndex + 1
+      this.syncProgress.currentFetchedMessages = 0
+      this.syncProgress.currentEligibleMessages = 0
+      this.syncProgress.currentInsertedMessages = 0
+      const chatStartedAt = Date.now()
+      this.operationalLog.add('info', 'chat_started', 'Processamento da conversa iniciado.', {
+        chatName: operationalChatName(chat),
+        position: chatIndex + 1,
+        totalChats: chatIds.length,
+        messageLimit: config.sync.maxMessagesPerChat,
+      })
 
       if (chatsInBatch >= batchSize) {
         this.message = 'Pausa de carga antes de continuar a fila…'
@@ -380,6 +455,13 @@ export class WhatsAppService {
         this.database.markChatSyncCompleted(chatId, new Date().toISOString())
         this.syncProgress.completedChats += 1
         chatsInBatch += 1
+        this.operationalLog.add('info', 'chat_completed', 'Conversa processada.', {
+          chatName: operationalChatName(chat),
+          fetched: this.syncProgress.currentFetchedMessages,
+          eligible: this.syncProgress.currentEligibleMessages,
+          inserted: this.syncProgress.currentInsertedMessages,
+          durationMs: Date.now() - chatStartedAt,
+        })
       } catch (error) {
         if (error instanceof SyncInterruptedError) {
           this.database.markChatSyncCancelled(chatId)
@@ -390,6 +472,10 @@ export class WhatsAppService {
         this.syncProgress.failedChats += 1
         chatsInBatch += 1
         this.warnings.push(`${chatDisplayName(chat)}: ${failure}`)
+        this.operationalLog.add('error', 'chat_failed', 'Falha ao processar conversa.', {
+          chatName: operationalChatName(chat),
+          durationMs: Date.now() - chatStartedAt,
+        })
       } finally {
         this.syncProgress.currentChunkTarget = null
       }
@@ -398,6 +484,14 @@ export class WhatsAppService {
     this.assertSyncActive(client, control)
     this.lastSyncAt = new Date().toISOString()
     this.message = 'Sincronização concluída.'
+    this.operationalLog.add('info', 'sync_completed', this.message, {
+      completedChats: this.syncProgress.completedChats,
+      skippedChats: this.syncProgress.skippedChats,
+      failedChats: this.syncProgress.failedChats,
+      fetched: this.syncProgress.totalFetchedMessages,
+      eligible: this.syncProgress.totalEligibleMessages,
+      inserted: this.syncProgress.totalInsertedMessages,
+    })
   }
 
   private async syncChat(
@@ -417,6 +511,12 @@ export class WhatsAppService {
       await this.waitUntilRunnable(control)
       this.assertSyncActive(client, control)
       this.syncProgress.currentChunkTarget = target
+      const fetchStartedAt = Date.now()
+      this.operationalLog.add('info', 'fetch_started', 'Busca de mensagens iniciada.', {
+        chatName: operationalChatName(chat),
+        target,
+        messageLimit: maximum,
+      })
 
       const messages = await this.readWithRetry(
         () => chat.fetchMessages({ limit: target }),
@@ -424,18 +524,43 @@ export class WhatsAppService {
         client,
         this.clientAbortController?.signal,
         control,
-        `Consultando ${chatDisplayName(chat)}`,
+        `Consultando ${operationalChatName(chat)}`,
       )
       this.assertSyncActive(client, control)
+      let pageFetched = 0
+      let pageEligible = 0
+      let pageInserted = 0
 
       for (const item of messages) {
         this.assertSyncActive(client, control)
         const messageId = item.id._serialized
         if (seenMessageIds.has(messageId)) continue
         seenMessageIds.add(messageId)
+        pageFetched += 1
+        this.syncProgress.currentFetchedMessages += 1
+        this.syncProgress.totalFetchedMessages += 1
         if (item.timestamp < cutoff) continue
-        await this.persistMessage(item, chat)
+        const outcome = await this.persistMessage(item, chat)
+        if (outcome === 'ignored') continue
+        pageEligible += 1
+        this.syncProgress.currentEligibleMessages += 1
+        this.syncProgress.totalEligibleMessages += 1
+        if (outcome === 'inserted') {
+          pageInserted += 1
+          this.syncProgress.currentInsertedMessages += 1
+          this.syncProgress.totalInsertedMessages += 1
+        }
       }
+
+      this.operationalLog.add('info', 'fetch_completed', 'Bloco de mensagens processado.', {
+        chatName: operationalChatName(chat),
+        target,
+        returned: messages.length,
+        uniqueFetched: pageFetched,
+        eligible: pageEligible,
+        inserted: pageInserted,
+        durationMs: Date.now() - fetchStartedAt,
+      })
 
       const decision = evaluateHistoryPage({
         messageIds: messages.map((item) => item.id._serialized),
@@ -488,7 +613,15 @@ export class WhatsAppService {
 
         const retryNumber = attempt + 1
         this.message = `${label} falhou. Nova tentativa ${retryNumber}/${policy.maxRetries} após uma pausa…`
-        const sampleDelay = () => sampleExponentialBackoff(policy, attempt, this.random)
+        const sampleDelay = () => {
+          const delay = sampleExponentialBackoff(policy, attempt, this.random)
+          this.operationalLog.add('warn', 'read_retry', this.message, {
+            retry: retryNumber,
+            maxRetries: policy.maxRetries,
+            delayMs: delay,
+          })
+          return delay
+        }
         if (control) {
           await this.waitForControlledDelay(sampleDelay, client, control)
         } else {
@@ -573,6 +706,9 @@ export class WhatsAppService {
   private finishSync(client: WhatsAppClient, control: SyncControl): void {
     if (this.syncControl !== control) return
     const wasCancelled = control.cancelled
+    if (wasCancelled) {
+      this.operationalLog.add('warn', 'sync_cancelled', 'Sincronização cancelada pelo usuário.')
+    }
     this.clearDelay()
     this.pauseResolve?.()
     this.pauseResolve = null
@@ -638,7 +774,10 @@ export class WhatsAppService {
     await this.persistMessage(message, chat)
   }
 
-  private async persistMessage(message: WhatsAppMessage, chat: WhatsAppChat): Promise<void> {
+  private async persistMessage(
+    message: WhatsAppMessage,
+    chat: WhatsAppChat,
+  ): Promise<PersistOutcome> {
     const normalized = normalizeMessage({
       id: message.id._serialized,
       body: message.body,
@@ -647,7 +786,7 @@ export class WhatsAppService {
       timestamp: message.timestamp,
     })
     const chatType = this.chatType(chat)
-    if (!normalized || !chatType) return
+    if (!normalized || !chatType) return 'ignored'
 
     const record: MessageRecord = {
       chatId: chat.id._serialized,
@@ -659,7 +798,9 @@ export class WhatsAppService {
       text: normalized.text,
     }
 
-    if (this.database.saveMessage(record, normalized.timestampUnix)) this.collectedMessages += 1
+    if (!this.database.saveMessage(record, normalized.timestampUnix)) return 'duplicate'
+    this.collectedMessages += 1
+    return 'inserted'
   }
 
   private async resolveAuthor(message: WhatsAppMessage): Promise<string> {
@@ -693,13 +834,33 @@ export class WhatsAppService {
     const type = this.chatType(chat)
     if (!type) return null
     const id = chat.id._serialized
+    const contact = type === 'contact' ? this.contactMetadata.get(id) : undefined
     return {
       id,
-      name: chatDisplayName(chat),
+      name: contact?.name || chatDisplayName(chat),
       type,
+      phoneNumber: contact?.phoneNumber ?? null,
+      isSavedContact: contact?.isSavedContact ?? false,
+      isBusiness: contact?.isBusiness ?? false,
       tags: chatTags[id] ?? [],
       selected: selectedChatIds.includes(id),
     }
+  }
+
+  private cacheContactMetadata(contact: WhatsAppContact): void {
+    if (contact.isGroup || !CONTACT_SERVERS.has(contact.id.server)) return
+    const name =
+      contact.name ||
+      contact.verifiedName ||
+      contact.pushname ||
+      contact.shortName ||
+      contact.number
+    this.contactMetadata.set(contact.id._serialized, {
+      name,
+      phoneNumber: contact.number,
+      isSavedContact: contact.isMyContact,
+      isBusiness: contact.isBusiness,
+    })
   }
 
   private scheduleReconnect(): void {
@@ -709,6 +870,10 @@ export class WhatsAppService {
     this.reconnectAttempt += 1
     this.state = 'reconnecting'
     this.message = `Conexão perdida. Nova tentativa em aproximadamente ${Math.ceil(delay / 1000)}s.`
+    this.operationalLog.add('warn', 'reconnect_scheduled', this.message, {
+      attempt: this.reconnectAttempt,
+      delayMs: delay,
+    })
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
       void this.destroyClient().finally(() => this.createClient('reconnecting'))

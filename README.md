@@ -82,6 +82,8 @@ Sincronizações automáticas e manuais ignoram temporariamente chats consultado
 
 Falhas de leitura usam no máximo duas novas tentativas com backoff exponencial e jitter limitado. A reconexão também usa backoff exponencial, partindo de aproximadamente 2 segundos e limitada a 60 segundos. Atualizações simultâneas da lista são agrupadas e, durante uma sincronização, a lista em cache é usada sem uma nova consulta ao WhatsApp.
 
+Durante a coleta, a interface mostra a posição da conversa na fila, quantas mensagens foram analisadas, quantas passaram pelos filtros e quantas eram novas. O painel **Detalhes técnicos para diagnóstico** fica recolhido por padrão e mantém em memória somente os 200 eventos operacionais mais recentes. Ele não registra o texto das mensagens nem mídias e é limpo quando o servidor reinicia.
+
 Esse controle reduz rajadas locais; ele não simula de forma garantida uma pessoa, não contorna regras do WhatsApp e não elimina o risco associado ao cliente não oficial.
 
 ## Sessão e reconexão

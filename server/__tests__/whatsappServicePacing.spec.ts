@@ -155,7 +155,8 @@ describe('WhatsAppService pacing', () => {
     const harness = service as unknown as ServiceHarness
     let resolveChats!: (value: []) => void
     const getChats = vi.fn(() => new Promise<[]>((resolve) => (resolveChats = resolve)))
-    const client = { getChats }
+    const getContacts = vi.fn().mockResolvedValue([])
+    const client = { getChats, getContacts }
     harness.client = client
     harness.clientAbortController = new AbortController()
     harness.state = 'ready'
@@ -165,9 +166,70 @@ describe('WhatsAppService pacing', () => {
     expect(getChats).toHaveBeenCalledTimes(1)
     resolveChats([])
     await Promise.all([first, second])
+    expect(getContacts).toHaveBeenCalledTimes(1)
 
     harness.syncPromise = new Promise<void>(() => undefined)
     await service.getChats(true)
     expect(getChats).toHaveBeenCalledTimes(1)
+  })
+
+  it('enriches contact chats from the cached contacts list', async () => {
+    const service = createService()
+    const harness = service as unknown as ServiceHarness
+    const id = { _serialized: '5511999999999@c.us', server: 'c.us', user: '5511999999999' }
+    const client = {
+      getChats: vi.fn().mockResolvedValue([{ id, isGroup: false, name: '+55 11 99999-9999' }]),
+      getContacts: vi.fn().mockResolvedValue([
+        {
+          id,
+          isGroup: false,
+          name: 'Maria Souza',
+          verifiedName: undefined,
+          pushname: 'Maria',
+          shortName: 'Maria',
+          number: '5511999999999',
+          isMyContact: true,
+          isBusiness: true,
+        },
+      ]),
+    }
+    harness.client = client
+    harness.clientAbortController = new AbortController()
+    harness.state = 'ready'
+
+    const chats = await service.getChats(true)
+
+    expect(chats[0]).toMatchObject({
+      name: 'Maria Souza',
+      phoneNumber: '5511999999999',
+      isSavedContact: true,
+      isBusiness: true,
+    })
+  })
+
+  it('keeps contact chats available when metadata enrichment fails', async () => {
+    vi.useFakeTimers()
+    const service = createService()
+    const harness = service as unknown as ServiceHarness
+    const id = { _serialized: '5511999999999@c.us', server: 'c.us', user: '5511999999999' }
+    const client = {
+      getChats: vi.fn().mockResolvedValue([{ id, isGroup: false, name: '+55 11 99999-9999' }]),
+      getContacts: vi.fn().mockRejectedValue(new Error('metadata unavailable')),
+    }
+    harness.client = client
+    harness.clientAbortController = new AbortController()
+    harness.state = 'ready'
+
+    const pendingChats = service.getChats(true)
+    await vi.runAllTimersAsync()
+    const chats = await pendingChats
+
+    expect(chats[0]).toMatchObject({
+      name: '+55 11 99999-9999',
+      phoneNumber: null,
+      isSavedContact: false,
+      isBusiness: false,
+    })
+    expect(client.getContacts).toHaveBeenCalledTimes(3)
   })
 })

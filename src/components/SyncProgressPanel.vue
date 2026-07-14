@@ -31,6 +31,14 @@ const nextActionLabel = computed(() => {
   )
   return `Próxima operação em aproximadamente ${seconds}s`
 })
+const chatPositionLabel = computed(() => {
+  if (!props.progress.currentChatPosition) return null
+  return `conversa ${props.progress.currentChatPosition} de ${props.progress.totalChats}`
+})
+const messageProgressLabel = computed(() => {
+  if (!props.progress.messageLimitPerChat) return null
+  return `Analisadas ${props.progress.currentFetchedMessages} de até ${props.progress.messageLimitPerChat} mensagens nesta conversa`
+})
 
 onMounted(() => {
   timer = window.setInterval(() => {
@@ -59,10 +67,19 @@ onBeforeUnmount(() => {
       {{ percentage }}%
     </progress>
 
-    <p v-if="progress.currentChatName" class="current-chat">
-      Chat atual: <strong>{{ progress.currentChatName }}</strong>
-      <span v-if="progress.currentChunkTarget"> · bloco até {{ progress.currentChunkTarget }}</span>
-    </p>
+    <div v-if="progress.currentChatName" class="current-work">
+      <p class="current-chat">
+        Processando <strong>“{{ progress.currentChatName }}”</strong>
+        <span v-if="chatPositionLabel"> — {{ chatPositionLabel }}</span>
+      </p>
+      <p v-if="messageProgressLabel" class="message-progress">{{ messageProgressLabel }}</p>
+      <p v-if="progress.currentChunkTarget" class="chunk-progress">
+        Buscando bloco até {{ progress.currentChunkTarget }} mensagens
+      </p>
+      <p class="saved-progress">
+        {{ progress.currentInsertedMessages }} mensagens novas salvas nesta conversa
+      </p>
+    </div>
     <p v-if="nextActionLabel" class="next-action">{{ nextActionLabel }}</p>
 
     <dl class="progress-stats">
@@ -83,6 +100,12 @@ onBeforeUnmount(() => {
         <dd>{{ progress.totalChats }}</dd>
       </div>
     </dl>
+
+    <p class="run-summary">
+      Nesta execução: {{ progress.totalFetchedMessages }} analisadas ·
+      {{ progress.totalEligibleMessages }} elegíveis · {{ progress.totalInsertedMessages }} novas
+      salvas
+    </p>
 
     <div class="progress-actions">
       <button
@@ -125,10 +148,40 @@ onBeforeUnmount(() => {
   accent-color: var(--green);
 }
 
-.current-chat,
+.current-work,
 .next-action {
   margin: 0.65rem 0 0;
   color: var(--text-muted);
+}
+
+.current-work {
+  border-radius: 0.75rem;
+  padding: 0.8rem;
+  background: var(--surface-muted);
+}
+
+.current-work p {
+  margin: 0;
+}
+
+.current-work p + p {
+  margin-top: 0.3rem;
+}
+
+.current-chat {
+  color: var(--text);
+}
+
+.message-progress,
+.chunk-progress,
+.saved-progress,
+.run-summary {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.run-summary {
+  margin: -0.35rem 0 1rem;
 }
 
 .progress-stats {

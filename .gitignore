@@ -39,3 +39,4 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+/.wwebjs_cache

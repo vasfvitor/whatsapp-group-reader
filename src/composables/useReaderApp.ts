@@ -7,6 +7,8 @@ import {
   type ChatSummary,
   type ExportRequest,
   type ExportResult,
+  type OperationalLogEntry,
+  type OperationalLogResponse,
   type Source,
   type SyncSettings,
 } from '@shared/contracts'
@@ -49,7 +51,10 @@ export function useReaderApp() {
   const refreshing = shallowRef(false)
   const exporting = shallowRef(false)
   const lastExport = shallowRef<ExportResult | null>(null)
+  const debugLog = shallowRef<OperationalLogEntry[]>([])
   let pollTimer: number | null = null
+  let logCursor = 0
+  let logPollInFlight = false
   const syncing = computed(() => status.value.syncProgress.phase !== 'idle')
 
   async function run<T>(operation: () => Promise<T>): Promise<T | null> {
@@ -79,6 +84,25 @@ export function useReaderApp() {
     }
   }
 
+  async function pollDebugLog(): Promise<void> {
+    if (logPollInFlight) return
+    logPollInFlight = true
+    try {
+      const response = await requestJson<OperationalLogResponse>(
+        `/api/debug-log?after=${logCursor}`,
+      )
+      const serverRestarted = response.cursor < logCursor
+      debugLog.value = (
+        serverRestarted ? response.entries : [...debugLog.value, ...response.entries]
+      ).slice(-200)
+      logCursor = response.cursor
+    } catch {
+      // The status poll will surface persistent local-server failures.
+    } finally {
+      logPollInFlight = false
+    }
+  }
+
   async function refreshChats(force = false): Promise<void> {
     if (refreshing.value) return
     refreshing.value = true
@@ -101,6 +125,7 @@ export function useReaderApp() {
     if (loadedStatus) status.value = loadedStatus
     if (loadedConfig) config.value = loadedConfig
     if (loadedStatus?.state === 'ready' || loadedStatus?.state === 'syncing') await refreshChats()
+    await pollDebugLog()
     loading.value = false
   }
 
@@ -187,7 +212,10 @@ export function useReaderApp() {
 
   onMounted(() => {
     void load()
-    pollTimer = window.setInterval(() => void pollStatus(), 2_000)
+    pollTimer = window.setInterval(() => {
+      void pollStatus()
+      void pollDebugLog()
+    }, 2_000)
   })
 
   onBeforeUnmount(() => {
@@ -205,6 +233,7 @@ export function useReaderApp() {
     syncing,
     exporting: shallowReadonly(exporting),
     lastExport: shallowReadonly(lastExport),
+    debugLog: shallowReadonly(debugLog),
     refreshChats,
     setSelectedChatIds,
     setChatTags,

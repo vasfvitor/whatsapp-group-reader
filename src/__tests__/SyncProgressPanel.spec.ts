@@ -13,7 +13,15 @@ function progress(overrides: Partial<SyncProgress> = {}): SyncProgress {
     failedChats: 0,
     currentChatId: 'chat@g.us',
     currentChatName: 'Equipe',
+    currentChatPosition: 5,
     currentChunkTarget: 50,
+    messageLimitPerChat: 500,
+    currentFetchedMessages: 42,
+    currentEligibleMessages: 35,
+    currentInsertedMessages: 18,
+    totalFetchedMessages: 120,
+    totalEligibleMessages: 80,
+    totalInsertedMessages: 31,
     nextActionAt: null,
     ...overrides,
   }
@@ -25,6 +33,9 @@ describe('SyncProgressPanel', () => {
 
     expect(wrapper.text()).toContain('40%')
     expect(wrapper.text()).toContain('Equipe')
+    expect(wrapper.text()).toContain('conversa 5 de 10')
+    expect(wrapper.text()).toContain('Analisadas 42 de até 500')
+    expect(wrapper.text()).toContain('18 mensagens novas salvas')
 
     const buttons = wrapper.findAll('button')
     await buttons[0]!.trigger('click')
