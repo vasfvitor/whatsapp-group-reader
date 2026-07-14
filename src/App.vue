@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import ConnectionCard from './components/ConnectionCard.vue'
 import ChatSelector from './components/ChatSelector.vue'
-import SourceRulesPanel from './components/SourceRulesPanel.vue'
 import SyncSettingsForm from './components/SyncSettingsForm.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import SyncProgressPanel from './components/SyncProgressPanel.vue'
@@ -38,27 +37,17 @@ function confirmForcedSync(): void {
           :busy="reader.saving.value"
           @reset="confirmSessionReset"
         />
-        <div class="settings-stack">
-          <SourceRulesPanel
-            :sources="reader.config.value.sources"
-            :chats="reader.chats.value"
-            @update:sources="reader.setSources"
-            @apply="reader.applySources"
-          />
-          <SyncSettingsForm
-            :settings="reader.config.value.sync"
-            @update:settings="reader.setSyncSettings"
-          />
-        </div>
+        <SyncSettingsForm
+          :settings="reader.config.value.sync"
+          @update:settings="reader.setSyncSettings"
+        />
       </div>
 
       <ChatSelector
         :chats="reader.chats.value"
         :selected-chat-ids="reader.config.value.selectedChatIds"
-        :chat-tags="reader.config.value.chatTags"
         :disabled="reader.status.value.state !== 'ready' || reader.refreshing.value"
         @update:selected-chat-ids="reader.setSelectedChatIds"
-        @update:chat-tags="reader.setChatTags"
         @refresh="reader.refreshChats(true)"
       />
 
@@ -120,11 +109,6 @@ function confirmForcedSync(): void {
   grid-template-columns: minmax(280px, 0.85fr) minmax(400px, 1.15fr);
   gap: 1rem;
   margin-bottom: 1rem;
-}
-
-.settings-stack {
-  display: grid;
-  gap: 1rem;
 }
 
 .save-bar {

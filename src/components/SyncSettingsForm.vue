@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, shallowRef } from 'vue'
 import type { LoadProfile, SyncSettings } from '@shared/contracts'
 
 const props = defineProps<{
@@ -10,9 +10,30 @@ const emit = defineEmits<{
   'update:settings': [value: SyncSettings]
 }>()
 
-function updateSetting(key: keyof SyncSettings, event: Event): void {
-  const value = Number((event.target as HTMLInputElement).value)
-  emit('update:settings', { ...props.settings, [key]: value })
+type TimeRange = '24' | '168' | 'custom'
+
+const initialRange = [24, 168].includes(props.settings.lookbackHours)
+  ? String(props.settings.lookbackHours)
+  : 'custom'
+const selectedRange = shallowRef<TimeRange>(initialRange as TimeRange)
+
+function updateTimeRange(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value as TimeRange
+  selectedRange.value = value
+  if (value === 'custom') return
+  emit('update:settings', { ...props.settings, lookbackHours: Number(value) })
+}
+
+function updateHours(event: Event): void {
+  const rawValue = Number((event.target as HTMLInputElement).value)
+  const lookbackHours = Math.min(8760, Math.max(1, Math.trunc(rawValue)))
+  emit('update:settings', { ...props.settings, lookbackHours })
+}
+
+function updateMessageLimit(event: Event): void {
+  const rawValue = Number((event.target as HTMLInputElement).value)
+  const maxMessagesPerChat = Math.min(1000, Math.max(1, Math.trunc(rawValue)))
+  emit('update:settings', { ...props.settings, maxMessagesPerChat })
 }
 
 function updateProfile(event: Event): void {
@@ -37,30 +58,38 @@ const profileDescription = computed(() =>
 
     <div class="settings-grid">
       <label class="field">
-        <span>Últimas horas</span>
+        <span>Período das mensagens</span>
+        <select name="timeRange" :value="selectedRange" @change="updateTimeRange">
+          <option value="24">Últimas 24 horas</option>
+          <option value="168">Últimos 7 dias</option>
+          <option value="custom">Personalizado (horas)</option>
+        </select>
+      </label>
+      <label v-if="selectedRange === 'custom'" class="field">
+        <span>Quantidade de horas</span>
         <input
           type="number"
           min="1"
           max="8760"
           :value="settings.lookbackHours"
-          @input="updateSetting('lookbackHours', $event)"
+          @input="updateHours"
         />
       </label>
       <label class="field">
-        <span>Máximo por conversa</span>
+        <span>Máximo por conversa (até 1000)</span>
         <input
           type="number"
           min="1"
           max="1000"
           :value="settings.maxMessagesPerChat"
-          @input="updateSetting('maxMessagesPerChat', $event)"
+          @input="updateMessageLimit"
         />
       </label>
     </div>
 
     <label class="field profile-field">
       <span>Ritmo da sincronização</span>
-      <select :value="settings.loadProfile" @change="updateProfile">
+      <select name="loadProfile" :value="settings.loadProfile" @change="updateProfile">
         <option value="conservative">Conservador</option>
         <option value="balanced">Balanceado</option>
       </select>

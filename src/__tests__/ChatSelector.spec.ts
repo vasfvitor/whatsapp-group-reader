@@ -28,7 +28,7 @@ const chats = [
 describe('ChatSelector', () => {
   it('emits the canonical chat IDs when the user selects a chat', async () => {
     const wrapper = mount(ChatSelector, {
-      props: { chats, selectedChatIds: [], chatTags: {} },
+      props: { chats, selectedChatIds: [] },
     })
 
     await wrapper.find('input[type="checkbox"]').setValue(true)
@@ -36,36 +36,26 @@ describe('ChatSelector', () => {
     expect(wrapper.emitted('update:selectedChatIds')?.[0]).toEqual([['group@g.us']])
   })
 
-  it('stores comma-separated local tags for a chat', async () => {
-    const wrapper = mount(ChatSelector, {
-      props: { chats, selectedChatIds: [], chatTags: {} },
-    })
-    const tagInput = wrapper.find('input[placeholder="resumir, trabalho"]')
-
-    await tagInput.setValue('Resumir, trabalho, Resumir')
-    await tagInput.trigger('change')
-
-    const tagEvents = wrapper.emitted('update:chatTags')
-    expect(tagEvents?.[tagEvents.length - 1]).toEqual([{ 'group@g.us': ['Resumir', 'trabalho'] }])
-  })
-
   it('disables refresh and selection while bulk reads are unavailable', () => {
     const wrapper = mount(ChatSelector, {
-      props: { chats, selectedChatIds: [], chatTags: {}, disabled: true },
+      props: { chats, selectedChatIds: [], disabled: true },
     })
 
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
     expect(wrapper.get('input[type="checkbox"]').attributes('disabled')).toBeDefined()
   })
 
-  it('shows contact name, number, and useful metadata', () => {
+  it('shows each conversation as a compact name and type', () => {
     const wrapper = mount(ChatSelector, {
-      props: { chats, selectedChatIds: [], chatTags: {} },
+      props: { chats, selectedChatIds: [] },
     })
 
-    expect(wrapper.text()).toContain('Maria')
-    expect(wrapper.text()).toContain('5511999999999')
-    expect(wrapper.text()).toContain('Salvo')
-    expect(wrapper.text()).toContain('Comercial')
+    expect(wrapper.get('[aria-label="Equipe — Grupo"]').attributes('aria-label')).toBe(
+      'Equipe — Grupo',
+    )
+    expect(wrapper.get('[aria-label="Maria — Contato"]').attributes('aria-label')).toBe(
+      'Maria — Contato',
+    )
+    expect(wrapper.text()).not.toContain('Tags locais')
   })
 })

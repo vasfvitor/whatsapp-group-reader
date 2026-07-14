@@ -5,13 +5,11 @@ import type { ChatSummary } from '@shared/contracts'
 const props = defineProps<{
   chats: ChatSummary[]
   selectedChatIds: string[]
-  chatTags: Record<string, string[]>
   disabled?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:selectedChatIds': [value: string[]]
-  'update:chatTags': [value: Record<string, string[]>]
   refresh: []
 }>()
 
@@ -44,21 +42,6 @@ function selectVisible(selected: boolean): void {
     else next.delete(chat.id)
   }
   emit('update:selectedChatIds', [...next])
-}
-
-function updateTags(chatId: string, rawValue: string): void {
-  const tags = [
-    ...new Set(
-      rawValue
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-    ),
-  ]
-  const next = { ...props.chatTags }
-  if (tags.length) next[chatId] = tags
-  else delete next[chatId]
-  emit('update:chatTags', next)
 }
 </script>
 
@@ -96,18 +79,19 @@ function updateTags(chatId: string, rawValue: string): void {
     </div>
 
     <div class="bulk-actions">
-      <span>{{ visibleChats.length }} conversas visíveis</span>
-      <button type="button" class="text-button" @click="selectVisible(true)">
-        Marcar visíveis
-      </button>
+      <span>{{ visibleChats.length }} chats disponíveis</span>
+      <button type="button" class="text-button" @click="selectVisible(true)">Marcar todos</button>
       <button type="button" class="text-button" @click="selectVisible(false)">
-        Desmarcar visíveis
+        Desmarcar todos
       </button>
     </div>
 
     <div v-if="visibleChats.length" class="chat-list">
       <article v-for="chat in visibleChats" :key="chat.id" class="chat-row">
-        <label class="chat-choice">
+        <label
+          class="chat-choice"
+          :aria-label="`${chat.name} — ${chat.type === 'group' ? 'Grupo' : 'Contato'}`"
+        >
           <input
             type="checkbox"
             :checked="selectedChatIds.includes(chat.id)"
@@ -115,24 +99,9 @@ function updateTags(chatId: string, rawValue: string): void {
             @change="toggleChat(chat.id, ($event.target as HTMLInputElement).checked)"
           />
           <span class="chat-copy">
-            <span class="chat-title">
-              <strong>{{ chat.name }}</strong>
-              <span v-if="chat.isSavedContact" class="metadata-badge">Salvo</span>
-              <span v-if="chat.isBusiness" class="metadata-badge">Comercial</span>
-            </span>
-            <small>
-              {{ chat.type === 'group' ? 'Grupo' : chat.phoneNumber || 'Contato' }}
-            </small>
+            <strong>{{ chat.name }}</strong>
+            <small>— {{ chat.type === 'group' ? 'Grupo' : 'Contato' }}</small>
           </span>
-        </label>
-        <label class="tag-field">
-          <span>Tags locais</span>
-          <input
-            type="text"
-            :value="chatTags[chat.id]?.join(', ') ?? ''"
-            placeholder="resumir, trabalho"
-            @change="updateTags(chat.id, ($event.target as HTMLInputElement).value)"
-          />
         </label>
       </article>
     </div>
@@ -193,12 +162,9 @@ function updateTags(chatId: string, rawValue: string): void {
 }
 
 .chat-row {
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(160px, 220px);
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0.7rem;
+  padding: 0.35rem 0.6rem;
   border-bottom: 1px solid var(--border);
 }
 
@@ -211,6 +177,7 @@ function updateTags(chatId: string, rawValue: string): void {
   align-items: center;
   gap: 0.55rem;
   min-width: 0;
+  width: 100%;
 }
 
 .chat-choice input {
@@ -220,14 +187,8 @@ function updateTags(chatId: string, rawValue: string): void {
 }
 
 .chat-copy {
-  display: grid;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.chat-title {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 0.35rem;
   min-width: 0;
 }
@@ -238,30 +199,9 @@ function updateTags(chatId: string, rawValue: string): void {
   white-space: nowrap;
 }
 
-.metadata-badge {
+.chat-copy small {
   flex: none;
-  border-radius: 999px;
-  padding: 0.12rem 0.35rem;
-  background: var(--green-soft);
-  color: var(--green-dark);
-  font-size: 0.62rem;
-  font-weight: 700;
-}
-
-.chat-copy small,
-.tag-field span {
   color: var(--text-muted);
-}
-
-.tag-field {
-  display: grid;
-  gap: 0.25rem;
-  width: 100%;
-  font-size: 0.75rem;
-}
-
-.tag-field input {
-  padding: 0.4rem 0.55rem;
 }
 
 @media (max-width: 700px) {
@@ -269,14 +209,6 @@ function updateTags(chatId: string, rawValue: string): void {
   .selector-tools {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .tag-field {
-    width: 100%;
-  }
-
-  .chat-row {
-    grid-template-columns: 1fr;
   }
 }
 </style>
