@@ -26,6 +26,9 @@ function formatDetails(details: OperationalLogDetails): string {
     <p class="debug-note">
       Este log não contém o texto das mensagens, mídias ou conteúdo coletado.
     </p>
+    <a class="button button--ghost download-log" href="/api/debug-log/export" download>
+      Baixar log de diagnóstico (JSONL)
+    </a>
     <ol v-if="entries.length" class="debug-list" aria-label="Eventos técnicos">
       <li v-for="entry in entries" :key="entry.sequence" :class="`log-${entry.level}`">
         <time :datetime="entry.timestamp">{{ formatTime(entry.timestamp) }}</time>
@@ -58,6 +61,12 @@ function formatDetails(details: OperationalLogDetails): string {
 .empty-log {
   color: var(--text-muted);
   font-weight: 400;
+}
+
+.download-log {
+  display: inline-block;
+  margin-top: 0.75rem;
+  text-decoration: none;
 }
 
 .debug-note,

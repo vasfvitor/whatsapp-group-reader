@@ -77,7 +77,7 @@ export class WhatsAppService {
   private readonly chats = new Map<string, WhatsAppChat>()
   private readonly contactMetadata = new Map<string, ContactMetadata>()
   private readonly authors = new Map<string, string>()
-  private readonly operationalLog = new OperationalLogBuffer()
+  private readonly operationalLog: OperationalLogBuffer
   private state: ConnectionState = 'stopped'
   private qrDataUrl: string | null = null
   private message = 'Aplicação iniciada.'
@@ -104,6 +104,7 @@ export class WhatsAppService {
     private readonly random: RandomSource = cryptoRandomSource,
   ) {
     this.collectedMessages = database.countMessages()
+    this.operationalLog = new OperationalLogBuffer(200, database)
   }
 
   start(): void {

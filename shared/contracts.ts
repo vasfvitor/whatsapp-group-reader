@@ -37,6 +37,10 @@ export const operationalLogQuerySchema = z.object({
   after: z.coerce.number().int().min(0).default(0),
 })
 
+export const messagePreviewQuerySchema = z.object({
+  chatId: z.string().min(1),
+})
+
 export const exportRequestSchema = z
   .object({
     from: z.iso.datetime({ offset: true }),
@@ -151,6 +155,10 @@ export interface OperationalLogEntry {
 export interface OperationalLogResponse {
   entries: OperationalLogEntry[]
   cursor: number
+}
+
+export interface MessagePreviewResponse {
+  messages: MessageRecord[]
 }
 
 export interface AppStatus {

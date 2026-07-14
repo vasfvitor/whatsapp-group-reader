@@ -5,16 +5,19 @@ import { ZodError } from 'zod'
 import {
   appConfigSchema,
   exportRequestSchema,
+  messagePreviewQuerySchema,
   operationalLogQuerySchema,
   syncRequestSchema,
 } from '../shared/contracts.js'
 import type { ConfigStore } from './configStore.js'
 import type { ExportService } from './exportService.js'
+import type { MessageDatabase } from './database.js'
 import type { WhatsAppService } from './whatsappService.js'
 
 interface AppDependencies {
   configStore: ConfigStore
   exportService: ExportService
+  database: MessageDatabase
   whatsappService: WhatsAppService
   development: boolean
 }
@@ -56,6 +59,16 @@ export function createApp(dependencies: AppDependencies): express.Express {
     }
   })
 
+  app.get('/api/debug-log/export', (_request, response) => {
+    const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
+    const records = dependencies.database.listOperationalLogs()
+    const content = records.length
+      ? `${records.map((record) => JSON.stringify(record)).join('\n')}\n`
+      : ''
+    response.attachment(`diagnostic-log-${timestamp}.jsonl`)
+    response.type('application/x-ndjson').send(content)
+  })
+
   app.get('/api/config', (_request, response) => {
     response.json(dependencies.configStore.get())
   })
@@ -75,6 +88,19 @@ export function createApp(dependencies: AppDependencies): express.Express {
     try {
       const refresh = request.query.refresh === 'true'
       response.json(await dependencies.whatsappService.getChats(refresh))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get('/api/messages/preview', (request, response, next) => {
+    try {
+      const { chatId } = messagePreviewQuerySchema.parse(request.query)
+      if (!dependencies.configStore.get().selectedChatIds.includes(chatId)) {
+        response.status(403).json({ error: 'Conversa não autorizada para visualização.' })
+        return
+      }
+      response.json({ messages: dependencies.database.previewMessages(chatId, 20) })
     } catch (error) {
       next(error)
     }

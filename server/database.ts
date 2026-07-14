@@ -1,5 +1,12 @@
 import Database from 'better-sqlite3'
-import type { ChatType, MessageRecord } from '../shared/contracts.js'
+import type {
+  ChatType,
+  MessageRecord,
+  OperationalLogDetails,
+  OperationalLogEntry,
+  OperationalLogLevel,
+  OperationalLogResponse,
+} from '../shared/contracts.js'
 
 interface MessageRow {
   message_id: string
@@ -9,6 +16,15 @@ interface MessageRow {
   author: string
   timestamp_utc: string
   text: string
+}
+
+interface OperationalLogRow {
+  id: number
+  timestamp_utc: string
+  level: OperationalLogLevel
+  event: string
+  message: string
+  details_json: string
 }
 
 export interface Checkpoint {
@@ -69,6 +85,18 @@ export class MessageDatabase {
         ),
         last_error TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS operational_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp_utc TEXT NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('info', 'warn', 'error')),
+        event TEXT NOT NULL,
+        message TEXT NOT NULL,
+        details_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS operational_logs_timestamp
+        ON operational_logs (timestamp_utc);
     `)
 
     this.insertMessage = this.database.prepare(`
@@ -242,6 +270,126 @@ export class MessageDatabase {
       timestamp: row.timestamp_utc,
       text: row.text,
     }))
+  }
+
+  previewMessages(chatId: string, limit = 20): MessageRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT message_id, chat_id, chat_name, chat_type, author, timestamp_utc, text
+         FROM messages
+         WHERE chat_id = ?
+         ORDER BY timestamp_unix DESC, message_id DESC
+         LIMIT ?`,
+      )
+      .all(chatId, limit) as MessageRow[]
+
+    return rows.map((row) => ({
+      chatId: row.chat_id,
+      chatName: row.chat_name,
+      chatType: row.chat_type,
+      messageId: row.message_id,
+      author: row.author,
+      timestamp: row.timestamp_utc,
+      text: row.text,
+    }))
+  }
+
+  appendOperationalLog(entry: Omit<OperationalLogEntry, 'sequence'>): OperationalLogEntry {
+    const result = this.database
+      .prepare(
+        `INSERT INTO operational_logs (
+          timestamp_utc, level, event, message, details_json
+        ) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(entry.timestamp, entry.level, entry.event, entry.message, JSON.stringify(entry.details))
+
+    const sequence = Number(result.lastInsertRowid)
+    const count = this.countOperationalLogs()
+    if (count > 10_000) {
+      this.database
+        .prepare(
+          `DELETE FROM operational_logs
+           WHERE id IN (
+             SELECT id FROM operational_logs ORDER BY id ASC LIMIT ?
+           )`,
+        )
+        .run(count - 10_000)
+    }
+
+    return { sequence, ...entry }
+  }
+
+  readOperationalLogs(after = 0, limit = 200): OperationalLogResponse {
+    const maximum = this.database
+      .prepare('SELECT COALESCE(MAX(id), 0) AS cursor FROM operational_logs')
+      .get() as { cursor: number }
+    const effectiveAfter = after > maximum.cursor ? 0 : after
+    const rows = this.database
+      .prepare(
+        `SELECT id, timestamp_utc, level, event, message, details_json
+         FROM operational_logs
+         WHERE id > ?
+         ORDER BY id DESC
+         LIMIT ?`,
+      )
+      .all(effectiveAfter, limit) as OperationalLogRow[]
+
+    return {
+      entries: rows.reverse().map((row) => this.toOperationalLogEntry(row)),
+      cursor: maximum.cursor,
+    }
+  }
+
+  listOperationalLogs(): OperationalLogEntry[] {
+    const rows = this.database
+      .prepare(
+        `SELECT id, timestamp_utc, level, event, message, details_json
+         FROM operational_logs
+         ORDER BY id ASC`,
+      )
+      .all() as OperationalLogRow[]
+    return rows.map((row) => this.toOperationalLogEntry(row))
+  }
+
+  pruneOperationalLogs(now = new Date()): void {
+    const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    this.database.prepare('DELETE FROM operational_logs WHERE timestamp_utc < ?').run(cutoff)
+
+    const count = this.countOperationalLogs()
+    if (count > 10_000) {
+      this.database
+        .prepare(
+          `DELETE FROM operational_logs
+           WHERE id IN (
+             SELECT id FROM operational_logs ORDER BY id ASC LIMIT ?
+           )`,
+        )
+        .run(count - 10_000)
+    }
+  }
+
+  private countOperationalLogs(): number {
+    const row = this.database.prepare('SELECT COUNT(*) AS count FROM operational_logs').get() as {
+      count: number
+    }
+    return row.count
+  }
+
+  private toOperationalLogEntry(row: OperationalLogRow): OperationalLogEntry {
+    let details: OperationalLogDetails = {}
+    try {
+      details = JSON.parse(row.details_json) as OperationalLogDetails
+    } catch {
+      details = { invalidDetails: true }
+    }
+    return {
+      sequence: row.id,
+      timestamp: row.timestamp_utc,
+      level: row.level,
+      event: row.event,
+      message: row.message,
+      details,
+    }
   }
 
   close(): void {

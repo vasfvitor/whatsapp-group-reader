@@ -24,5 +24,7 @@ describe('DebugLogPanel', () => {
     expect(wrapper.text()).toContain('read_retry')
     expect(wrapper.text()).toContain('delayMs=5400')
     expect(wrapper.text()).toContain('não contém o texto das mensagens')
+    expect(wrapper.get('a').attributes('href')).toBe('/api/debug-log/export')
+    expect(wrapper.get('a').text()).toContain('Baixar log de diagnóstico')
   })
 })

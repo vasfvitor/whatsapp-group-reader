@@ -7,6 +7,8 @@ import {
   type ChatSummary,
   type ExportRequest,
   type ExportResult,
+  type MessagePreviewResponse,
+  type MessageRecord,
   type OperationalLogEntry,
   type OperationalLogResponse,
   type Source,
@@ -52,6 +54,9 @@ export function useReaderApp() {
   const exporting = shallowRef(false)
   const lastExport = shallowRef<ExportResult | null>(null)
   const debugLog = shallowRef<OperationalLogEntry[]>([])
+  const previewMessages = shallowRef<MessageRecord[]>([])
+  const previewLoading = shallowRef(false)
+  const previewError = shallowRef<string | null>(null)
   let pollTimer: number | null = null
   let logCursor = 0
   let logPollInFlight = false
@@ -210,6 +215,27 @@ export function useReaderApp() {
     await run(() => requestJson<void>('/api/data-directory/open', { method: 'POST' }))
   }
 
+  async function loadMessagePreview(chatId: string): Promise<void> {
+    previewLoading.value = true
+    previewError.value = null
+    previewMessages.value = []
+    try {
+      const response = await requestJson<MessagePreviewResponse>(
+        `/api/messages/preview?chatId=${encodeURIComponent(chatId)}`,
+      )
+      previewMessages.value = response.messages
+    } catch (caught) {
+      previewError.value = caught instanceof Error ? caught.message : String(caught)
+    } finally {
+      previewLoading.value = false
+    }
+  }
+
+  function clearMessagePreview(): void {
+    previewMessages.value = []
+    previewError.value = null
+  }
+
   onMounted(() => {
     void load()
     pollTimer = window.setInterval(() => {
@@ -234,6 +260,9 @@ export function useReaderApp() {
     exporting: shallowReadonly(exporting),
     lastExport: shallowReadonly(lastExport),
     debugLog: shallowReadonly(debugLog),
+    previewMessages: shallowReadonly(previewMessages),
+    previewLoading: shallowReadonly(previewLoading),
+    previewError: shallowReadonly(previewError),
     refreshChats,
     setSelectedChatIds,
     setChatTags,
@@ -248,5 +277,7 @@ export function useReaderApp() {
     resetSession,
     createExport,
     openDataDirectory,
+    loadMessagePreview,
+    clearMessagePreview,
   }
 }

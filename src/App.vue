@@ -5,6 +5,7 @@ import SyncSettingsForm from './components/SyncSettingsForm.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import SyncProgressPanel from './components/SyncProgressPanel.vue'
 import DebugLogPanel from './components/DebugLogPanel.vue'
+import MessagePreviewPanel from './components/MessagePreviewPanel.vue'
 import { useReaderApp } from './composables/useReaderApp'
 
 const reader = useReaderApp()
@@ -75,6 +76,17 @@ function confirmForcedSync(): void {
       />
 
       <DebugLogPanel :entries="reader.debugLog.value" />
+
+      <MessagePreviewPanel
+        :chats="
+          reader.chats.value.filter((chat) => reader.config.value.selectedChatIds.includes(chat.id))
+        "
+        :messages="reader.previewMessages.value"
+        :loading="reader.previewLoading.value"
+        :error="reader.previewError.value"
+        @load="reader.loadMessagePreview"
+        @clear="reader.clearMessagePreview"
+      />
 
       <ExportPanel
         :settings="reader.config.value.sync"
