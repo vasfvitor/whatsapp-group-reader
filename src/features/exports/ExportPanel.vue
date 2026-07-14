@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { shallowRef } from 'vue'
+import { computed, shallowRef } from 'vue'
 import {
   EXPORT_LIMITS,
   type ExportRequest,
@@ -33,13 +33,31 @@ const from = shallowRef(
   toLocalInput(new Date(now.getTime() - props.settings.lookbackHours * 3_600_000)),
 )
 const to = shallowRef(toLocalInput(now))
-const limitPerChat = shallowRef(props.settings.maxMessagesPerChat)
+const limitPerChat = shallowRef<number | ''>(props.settings.maxMessagesPerChat)
+
+const exportValidationError = computed(() => {
+  const fromTimestamp = Date.parse(from.value)
+  const toTimestamp = Date.parse(to.value)
+  const limit = Number(limitPerChat.value)
+  if (!from.value || Number.isNaN(fromTimestamp)) return 'Informe uma data inicial válida.'
+  if (!to.value || Number.isNaN(toTimestamp)) return 'Informe uma data final válida.'
+  if (fromTimestamp > toTimestamp) return 'A data inicial deve ser anterior à data final.'
+  if (
+    !Number.isInteger(limit) ||
+    limit < EXPORT_LIMITS.minimumPerChat ||
+    limit > EXPORT_LIMITS.maximumPerChat
+  ) {
+    return `Informe um limite inteiro entre ${EXPORT_LIMITS.minimumPerChat} e ${EXPORT_LIMITS.maximumPerChat}.`
+  }
+  return null
+})
 
 function submitExport(): void {
+  if (exportValidationError.value) return
   emit('export', {
     from: new Date(from.value).toISOString(),
     to: new Date(to.value).toISOString(),
-    limitPerChat: limitPerChat.value,
+    limitPerChat: Number(limitPerChat.value),
   })
 }
 </script>
@@ -55,17 +73,28 @@ function submitExport(): void {
     <div class="export-grid">
       <label class="field">
         <span>De</span>
-        <input v-model="from" type="datetime-local" />
+        <input
+          v-model="from"
+          type="datetime-local"
+          required
+          :aria-invalid="Boolean(exportValidationError)"
+        />
       </label>
       <label class="field">
         <span>Até</span>
-        <input v-model="to" type="datetime-local" />
+        <input
+          v-model="to"
+          type="datetime-local"
+          required
+          :aria-invalid="Boolean(exportValidationError)"
+        />
       </label>
       <label class="field">
         <span>Máximo por conversa</span>
         <input
           v-model.number="limitPerChat"
           type="number"
+          required
           :min="EXPORT_LIMITS.minimumPerChat"
           :max="EXPORT_LIMITS.maximumPerChat"
         />
@@ -92,7 +121,7 @@ function submitExport(): void {
       <button
         class="button button--primary"
         type="button"
-        :disabled="exporting"
+        :disabled="exporting || Boolean(exportValidationError)"
         @click="submitExport"
       >
         {{ exporting ? 'Gerando…' : 'Baixar JSONL' }}
@@ -101,6 +130,10 @@ function submitExport(): void {
         Abrir pasta de dados
       </button>
     </div>
+
+    <p v-if="exportValidationError" class="inline-error" role="alert">
+      {{ exportValidationError }}
+    </p>
 
     <p class="sync-help">
       A sincronização normal respeita o cooldown. Use a opção forçada somente quando precisar

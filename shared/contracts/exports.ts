@@ -11,7 +11,6 @@ export const exportRequestSchema = z
       .int()
       .min(EXPORT_LIMITS.minimumPerChat)
       .max(EXPORT_LIMITS.maximumPerChat),
-    chatIds: z.array(z.string().min(1)).optional(),
   })
   .refine((value) => Date.parse(value.from) <= Date.parse(value.to), {
     message: 'A data inicial deve ser anterior à data final.',

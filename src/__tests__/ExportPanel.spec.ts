@@ -30,4 +30,15 @@ describe('ExportPanel', () => {
     expect(wrapper.emitted('sync')).toHaveLength(1)
     expect(wrapper.emitted('forceSync')).toHaveLength(1)
   })
+
+  it('does not export an invalid date range', async () => {
+    const wrapper = mountPanel()
+    const dateInputs = wrapper.findAll('input[type="datetime-local"]')
+
+    await dateInputs[0]!.setValue('')
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('Informe uma data inicial válida.')
+    expect(wrapper.findAll('button').find((button) => button.text() === 'Baixar JSONL')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('export')).toBeUndefined()
+  })
 })

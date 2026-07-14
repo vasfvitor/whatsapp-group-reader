@@ -42,6 +42,8 @@ describe('ChatSelector', () => {
     })
 
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.bulk-actions button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.bulk-actions button + button').attributes('disabled')).toBeDefined()
     expect(wrapper.get('input[type="checkbox"]').attributes('disabled')).toBeDefined()
   })
 

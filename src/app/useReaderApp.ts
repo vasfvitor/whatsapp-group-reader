@@ -54,6 +54,7 @@ export function useReaderApp() {
     try {
       const next = await requestJson<AppStatus>('/api/status')
       status.value = next
+      error.value = null
       if (
         (next.state === 'ready' || next.state === 'syncing') &&
         previousState !== 'ready' &&
@@ -61,8 +62,8 @@ export function useReaderApp() {
       ) {
         await selection.refreshChats()
       }
-    } catch {
-      /* Local restarts and reconnects are transient. */
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : String(caught)
     }
   }
 

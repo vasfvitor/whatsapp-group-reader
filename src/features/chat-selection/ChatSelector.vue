@@ -36,6 +36,7 @@ function toggleChat(chatId: string, selected: boolean): void {
 }
 
 function selectVisible(selected: boolean): void {
+  if (props.disabled) return
   const next = new Set(props.selectedChatIds)
   for (const chat of visibleChats.value) {
     if (selected) next.add(chat.id)
@@ -80,8 +81,10 @@ function selectVisible(selected: boolean): void {
 
     <div class="bulk-actions">
       <span>{{ visibleChats.length }} chats disponíveis</span>
-      <button type="button" class="text-button" @click="selectVisible(true)">Marcar todos</button>
-      <button type="button" class="text-button" @click="selectVisible(false)">
+      <button type="button" class="text-button" :disabled="disabled" @click="selectVisible(true)">
+        Marcar todos
+      </button>
+      <button type="button" class="text-button" :disabled="disabled" @click="selectVisible(false)">
         Desmarcar todos
       </button>
     </div>

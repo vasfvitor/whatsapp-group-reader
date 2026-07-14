@@ -13,13 +13,12 @@ export class ExportService {
     private readonly dataDirectory: string,
   ) {}
 
-  async create(request: ExportRequest, defaultChatIds: string[]): Promise<ExportResult> {
-    const chatIds = request.chatIds?.length ? request.chatIds : defaultChatIds
+  async create(request: ExportRequest, authorizedChatIds: string[]): Promise<ExportResult> {
     const records = this.database.queryMessages({
       fromUnix: Math.floor(Date.parse(request.from) / 1000),
       toUnix: Math.floor(Date.parse(request.to) / 1000),
       limitPerChat: request.limitPerChat,
-      chatIds,
+      chatIds: authorizedChatIds,
     })
 
     await mkdir(this.exportsDirectory, { recursive: true })

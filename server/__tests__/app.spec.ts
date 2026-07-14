@@ -68,7 +68,7 @@ function createHarness() {
     development: true,
   })
 
-  return { app, database }
+  return { app, database, exportService }
 }
 
 describe('HTTP API contracts', () => {
@@ -100,6 +100,35 @@ describe('HTTP API contracts', () => {
       .query({ chatId: 'allowed@g.us' })
       .expect(200, { messages: [] })
     expect(database.previewMessages).toHaveBeenCalledWith('allowed@g.us', 20)
+  })
+
+  it('exports only the configured allowlist, ignoring client-supplied chat IDs', async () => {
+    const { app, exportService } = createHarness()
+    exportService.create.mockResolvedValue({
+      id: 'messages-test.jsonl',
+      fileName: 'messages-test.jsonl',
+      count: 0,
+      downloadUrl: '/api/exports/messages-test.jsonl',
+    })
+
+    await request(app)
+      .post('/api/exports')
+      .send({
+        from: '2026-07-01T00:00:00.000Z',
+        to: '2026-07-02T00:00:00.000Z',
+        limitPerChat: 50,
+        chatIds: ['blocked@g.us'],
+      })
+      .expect(201)
+
+    expect(exportService.create).toHaveBeenCalledWith(
+      {
+        from: '2026-07-01T00:00:00.000Z',
+        to: '2026-07-02T00:00:00.000Z',
+        limitPerChat: 50,
+      },
+      ['allowed@g.us'],
+    )
   })
 
   it('exports diagnostic logs as JSONL', async () => {
