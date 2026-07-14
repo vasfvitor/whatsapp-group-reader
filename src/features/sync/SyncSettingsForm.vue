@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
-import type { LoadProfile, SyncSettings } from '@shared/contracts'
+import { SYNC_LIMITS, type LoadProfile, type SyncSettings } from '@shared/contracts'
 
 const props = defineProps<{
   settings: SyncSettings
@@ -26,13 +26,19 @@ function updateTimeRange(event: Event): void {
 
 function updateHours(event: Event): void {
   const rawValue = Number((event.target as HTMLInputElement).value)
-  const lookbackHours = Math.min(8760, Math.max(1, Math.trunc(rawValue)))
+  const lookbackHours = Math.min(
+    SYNC_LIMITS.maximumLookbackHours,
+    Math.max(SYNC_LIMITS.minimumLookbackHours, Math.trunc(rawValue)),
+  )
   emit('update:settings', { ...props.settings, lookbackHours })
 }
 
 function updateMessageLimit(event: Event): void {
   const rawValue = Number((event.target as HTMLInputElement).value)
-  const maxMessagesPerChat = Math.min(1000, Math.max(1, Math.trunc(rawValue)))
+  const maxMessagesPerChat = Math.min(
+    SYNC_LIMITS.maximumMessagesPerChat,
+    Math.max(SYNC_LIMITS.minimumMessagesPerChat, Math.trunc(rawValue)),
+  )
   emit('update:settings', { ...props.settings, maxMessagesPerChat })
 }
 
@@ -69,8 +75,8 @@ const profileDescription = computed(() =>
         <span>Quantidade de horas</span>
         <input
           type="number"
-          min="1"
-          max="8760"
+          :min="SYNC_LIMITS.minimumLookbackHours"
+          :max="SYNC_LIMITS.maximumLookbackHours"
           :value="settings.lookbackHours"
           @input="updateHours"
         />
@@ -79,8 +85,8 @@ const profileDescription = computed(() =>
         <span>Máximo por conversa (até 1000)</span>
         <input
           type="number"
-          min="1"
-          max="1000"
+          :min="SYNC_LIMITS.minimumMessagesPerChat"
+          :max="SYNC_LIMITS.maximumMessagesPerChat"
           :value="settings.maxMessagesPerChat"
           @input="updateMessageLimit"
         />

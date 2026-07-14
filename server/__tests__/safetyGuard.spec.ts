@@ -1,10 +1,18 @@
 // @vitest-environment node
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('WhatsApp read-only safety guard', () => {
   it('does not call known mutating whatsapp-web.js APIs', async () => {
-    const source = await readFile(new URL('../whatsappService.ts', import.meta.url), 'utf8')
+    const serverDirectory = new URL('..', import.meta.url)
+    const files = await readdir(serverDirectory, { recursive: true })
+    const sources = await Promise.all(
+      files
+        .filter((file) => file.endsWith('.ts') && !file.includes('__tests__'))
+        .map((file) => readFile(new URL(file.replaceAll(path.sep, '/'), serverDirectory), 'utf8')),
+    )
+    const source = sources.join('\n')
     const forbiddenCalls = [
       '.sendMessage(',
       '.sendSeen(',

@@ -80,7 +80,7 @@ describe('WhatsAppService pacing', () => {
       .mockResolvedValue('ok')
 
     const result = harness.readWithRetry(operation, retryPolicy, client, undefined, null, 'Leitura')
-    await vi.advanceTimersByTimeAsync(6_000)
+    await vi.runAllTimersAsync()
 
     await expect(result).resolves.toBe('ok')
     expect(operation).toHaveBeenCalledTimes(3)

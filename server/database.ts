@@ -1,398 +1,73 @@
-import Database from 'better-sqlite3'
 import type {
-  ChatType,
   MessageRecord,
-  OperationalLogDetails,
   OperationalLogEntry,
-  OperationalLogLevel,
   OperationalLogResponse,
 } from '../shared/contracts.js'
+import { SqliteDatabase } from './infrastructure/sqlite/sqliteDatabase.js'
+import { MessageRepository, type Checkpoint } from './messages/messageRepository.js'
+import { SyncStateRepository, type ChatSyncState } from './sync/syncStateRepository.js'
+import { OperationalLogRepository } from './diagnostics/operationalLogRepository.js'
 
-interface MessageRow {
-  message_id: string
-  chat_id: string
-  chat_name: string
-  chat_type: ChatType
-  author: string
-  timestamp_utc: string
-  text: string
-}
+export type { Checkpoint, ChatSyncState }
+export type ChatSyncStatus = ChatSyncState['lastStatus']
 
-interface OperationalLogRow {
-  id: number
-  timestamp_utc: string
-  level: OperationalLogLevel
-  event: string
-  message: string
-  details_json: string
-}
-
-export interface Checkpoint {
-  chatId: string
-  lastTimestampUnix: number
-  lastMessageId: string
-}
-
-export type ChatSyncStatus = 'running' | 'completed' | 'failed' | 'cancelled'
-
-export interface ChatSyncState {
-  chatId: string
-  lastAttemptAt: string
-  lastCompletedAt: string | null
-  lastStatus: ChatSyncStatus
-  lastError: string | null
-}
-
+/** Compatibility facade while callers migrate to domain repositories. */
 export class MessageDatabase {
-  private readonly database: Database.Database
-  private readonly insertMessage: Database.Statement
-  private readonly upsertCheckpoint: Database.Statement
-  private readonly saveTransaction: (record: MessageRecord, timestampUnix: number) => boolean
+  private readonly sqlite: SqliteDatabase
+  private readonly messages: MessageRepository
+  private readonly syncStates: SyncStateRepository
+  private readonly logs: OperationalLogRepository
 
   constructor(filePath: string) {
-    this.database = new Database(filePath)
-    this.database.pragma('journal_mode = WAL')
-    this.database.pragma('foreign_keys = ON')
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS messages (
-        message_id TEXT PRIMARY KEY,
-        chat_id TEXT NOT NULL,
-        chat_name TEXT NOT NULL,
-        chat_type TEXT NOT NULL CHECK (chat_type IN ('group', 'contact')),
-        author TEXT NOT NULL,
-        timestamp_utc TEXT NOT NULL,
-        timestamp_unix INTEGER NOT NULL,
-        text TEXT NOT NULL,
-        captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE INDEX IF NOT EXISTS messages_chat_timestamp
-        ON messages (chat_id, timestamp_unix DESC);
-
-      CREATE TABLE IF NOT EXISTS checkpoints (
-        chat_id TEXT PRIMARY KEY,
-        last_timestamp_unix INTEGER NOT NULL,
-        last_message_id TEXT NOT NULL,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS chat_sync_state (
-        chat_id TEXT PRIMARY KEY,
-        last_attempt_at TEXT NOT NULL,
-        last_completed_at TEXT,
-        last_status TEXT NOT NULL CHECK (
-          last_status IN ('running', 'completed', 'failed', 'cancelled')
-        ),
-        last_error TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS operational_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp_utc TEXT NOT NULL,
-        level TEXT NOT NULL CHECK (level IN ('info', 'warn', 'error')),
-        event TEXT NOT NULL,
-        message TEXT NOT NULL,
-        details_json TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS operational_logs_timestamp
-        ON operational_logs (timestamp_utc);
-    `)
-
-    this.insertMessage = this.database.prepare(`
-      INSERT OR IGNORE INTO messages (
-        message_id, chat_id, chat_name, chat_type, author,
-        timestamp_utc, timestamp_unix, text
-      ) VALUES (
-        @messageId, @chatId, @chatName, @chatType, @author,
-        @timestamp, @timestampUnix, @text
-      )
-    `)
-
-    this.upsertCheckpoint = this.database.prepare(`
-      INSERT INTO checkpoints (chat_id, last_timestamp_unix, last_message_id)
-      VALUES (?, ?, ?)
-      ON CONFLICT(chat_id) DO UPDATE SET
-        last_timestamp_unix = excluded.last_timestamp_unix,
-        last_message_id = excluded.last_message_id,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE excluded.last_timestamp_unix >= checkpoints.last_timestamp_unix
-    `)
-
-    this.saveTransaction = this.database.transaction(
-      (record: MessageRecord, timestampUnix: number): boolean => {
-        const result = this.insertMessage.run({ ...record, timestampUnix })
-        this.upsertCheckpoint.run(record.chatId, timestampUnix, record.messageId)
-        return result.changes === 1
-      },
-    )
+    this.sqlite = new SqliteDatabase(filePath)
+    this.messages = new MessageRepository(this.sqlite.connection)
+    this.syncStates = new SyncStateRepository(this.sqlite.connection)
+    this.logs = new OperationalLogRepository(this.sqlite.connection)
   }
 
   saveMessage(record: MessageRecord, timestampUnix: number): boolean {
-    return this.saveTransaction(record, timestampUnix)
+    return this.messages.save(record, timestampUnix)
   }
-
   getCheckpoint(chatId: string): Checkpoint | null {
-    const row = this.database
-      .prepare(
-        `SELECT chat_id, last_timestamp_unix, last_message_id
-         FROM checkpoints WHERE chat_id = ?`,
-      )
-      .get(chatId) as
-      | { chat_id: string; last_timestamp_unix: number; last_message_id: string }
-      | undefined
-
-    return row
-      ? {
-          chatId: row.chat_id,
-          lastTimestampUnix: row.last_timestamp_unix,
-          lastMessageId: row.last_message_id,
-        }
-      : null
+    return this.messages.getCheckpoint(chatId)
   }
-
-  getChatSyncState(chatId: string): ChatSyncState | null {
-    const row = this.database
-      .prepare(
-        `SELECT chat_id, last_attempt_at, last_completed_at, last_status, last_error
-         FROM chat_sync_state WHERE chat_id = ?`,
-      )
-      .get(chatId) as
-      | {
-          chat_id: string
-          last_attempt_at: string
-          last_completed_at: string | null
-          last_status: ChatSyncStatus
-          last_error: string | null
-        }
-      | undefined
-
-    return row
-      ? {
-          chatId: row.chat_id,
-          lastAttemptAt: row.last_attempt_at,
-          lastCompletedAt: row.last_completed_at,
-          lastStatus: row.last_status,
-          lastError: row.last_error,
-        }
-      : null
-  }
-
-  markChatSyncAttempt(chatId: string, attemptedAt: string): void {
-    this.database
-      .prepare(
-        `INSERT INTO chat_sync_state (chat_id, last_attempt_at, last_status, last_error)
-         VALUES (?, ?, 'running', NULL)
-         ON CONFLICT(chat_id) DO UPDATE SET
-           last_attempt_at = excluded.last_attempt_at,
-           last_status = 'running',
-           last_error = NULL`,
-      )
-      .run(chatId, attemptedAt)
-  }
-
-  markChatSyncCompleted(chatId: string, completedAt: string): void {
-    this.database
-      .prepare(
-        `UPDATE chat_sync_state SET
-           last_completed_at = ?,
-           last_status = 'completed',
-           last_error = NULL
-         WHERE chat_id = ?`,
-      )
-      .run(completedAt, chatId)
-  }
-
-  markChatSyncFailed(chatId: string, error: string): void {
-    this.database
-      .prepare(
-        `UPDATE chat_sync_state SET last_status = 'failed', last_error = ? WHERE chat_id = ?`,
-      )
-      .run(error, chatId)
-  }
-
-  markChatSyncCancelled(chatId: string): void {
-    this.database
-      .prepare(
-        `UPDATE chat_sync_state SET last_status = 'cancelled', last_error = NULL WHERE chat_id = ?`,
-      )
-      .run(chatId)
-  }
-
   countMessages(): number {
-    const row = this.database.prepare('SELECT COUNT(*) AS count FROM messages').get() as {
-      count: number
-    }
-    return row.count
+    return this.messages.count()
   }
-
-  queryMessages(options: {
-    fromUnix: number
-    toUnix: number
-    limitPerChat: number
-    chatIds: string[]
-  }): MessageRecord[] {
-    if (options.chatIds.length === 0) return []
-
-    const placeholders = options.chatIds.map(() => '?').join(', ')
-    const rows = this.database
-      .prepare(
-        `WITH ranked AS (
-          SELECT
-            message_id, chat_id, chat_name, chat_type, author,
-            timestamp_utc, timestamp_unix, text,
-            ROW_NUMBER() OVER (
-              PARTITION BY chat_id
-              ORDER BY timestamp_unix DESC, message_id DESC
-            ) AS message_rank
-          FROM messages
-          WHERE timestamp_unix BETWEEN ? AND ?
-            AND chat_id IN (${placeholders})
-        )
-        SELECT message_id, chat_id, chat_name, chat_type, author, timestamp_utc, text
-        FROM ranked
-        WHERE message_rank <= ?
-        ORDER BY timestamp_utc ASC, message_id ASC`,
-      )
-      .all(
-        options.fromUnix,
-        options.toUnix,
-        ...options.chatIds,
-        options.limitPerChat,
-      ) as MessageRow[]
-
-    return rows.map((row) => ({
-      chatId: row.chat_id,
-      chatName: row.chat_name,
-      chatType: row.chat_type,
-      messageId: row.message_id,
-      author: row.author,
-      timestamp: row.timestamp_utc,
-      text: row.text,
-    }))
+  queryMessages(options: Parameters<MessageRepository['query']>[0]): MessageRecord[] {
+    return this.messages.query(options)
   }
-
   previewMessages(chatId: string, limit = 20): MessageRecord[] {
-    const rows = this.database
-      .prepare(
-        `SELECT message_id, chat_id, chat_name, chat_type, author, timestamp_utc, text
-         FROM messages
-         WHERE chat_id = ?
-         ORDER BY timestamp_unix DESC, message_id DESC
-         LIMIT ?`,
-      )
-      .all(chatId, limit) as MessageRow[]
-
-    return rows.map((row) => ({
-      chatId: row.chat_id,
-      chatName: row.chat_name,
-      chatType: row.chat_type,
-      messageId: row.message_id,
-      author: row.author,
-      timestamp: row.timestamp_utc,
-      text: row.text,
-    }))
+    return this.messages.preview(chatId, limit)
   }
-
+  getChatSyncState(chatId: string): ChatSyncState | null {
+    return this.syncStates.get(chatId)
+  }
+  markChatSyncAttempt(chatId: string, attemptedAt: string): void {
+    this.syncStates.markAttempt(chatId, attemptedAt)
+  }
+  markChatSyncCompleted(chatId: string, completedAt: string): void {
+    this.syncStates.markCompleted(chatId, completedAt)
+  }
+  markChatSyncFailed(chatId: string, error: string): void {
+    this.syncStates.markFailed(chatId, error)
+  }
+  markChatSyncCancelled(chatId: string): void {
+    this.syncStates.markCancelled(chatId)
+  }
   appendOperationalLog(entry: Omit<OperationalLogEntry, 'sequence'>): OperationalLogEntry {
-    const result = this.database
-      .prepare(
-        `INSERT INTO operational_logs (
-          timestamp_utc, level, event, message, details_json
-        ) VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(entry.timestamp, entry.level, entry.event, entry.message, JSON.stringify(entry.details))
-
-    const sequence = Number(result.lastInsertRowid)
-    const count = this.countOperationalLogs()
-    if (count > 10_000) {
-      this.database
-        .prepare(
-          `DELETE FROM operational_logs
-           WHERE id IN (
-             SELECT id FROM operational_logs ORDER BY id ASC LIMIT ?
-           )`,
-        )
-        .run(count - 10_000)
-    }
-
-    return { sequence, ...entry }
+    return this.logs.append(entry)
   }
-
   readOperationalLogs(after = 0, limit = 200): OperationalLogResponse {
-    const maximum = this.database
-      .prepare('SELECT COALESCE(MAX(id), 0) AS cursor FROM operational_logs')
-      .get() as { cursor: number }
-    const effectiveAfter = after > maximum.cursor ? 0 : after
-    const rows = this.database
-      .prepare(
-        `SELECT id, timestamp_utc, level, event, message, details_json
-         FROM operational_logs
-         WHERE id > ?
-         ORDER BY id DESC
-         LIMIT ?`,
-      )
-      .all(effectiveAfter, limit) as OperationalLogRow[]
-
-    return {
-      entries: rows.reverse().map((row) => this.toOperationalLogEntry(row)),
-      cursor: maximum.cursor,
-    }
+    return this.logs.read(after, limit)
   }
-
   listOperationalLogs(): OperationalLogEntry[] {
-    const rows = this.database
-      .prepare(
-        `SELECT id, timestamp_utc, level, event, message, details_json
-         FROM operational_logs
-         ORDER BY id ASC`,
-      )
-      .all() as OperationalLogRow[]
-    return rows.map((row) => this.toOperationalLogEntry(row))
+    return this.logs.list()
   }
-
   pruneOperationalLogs(now = new Date()): void {
-    const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    this.database.prepare('DELETE FROM operational_logs WHERE timestamp_utc < ?').run(cutoff)
-
-    const count = this.countOperationalLogs()
-    if (count > 10_000) {
-      this.database
-        .prepare(
-          `DELETE FROM operational_logs
-           WHERE id IN (
-             SELECT id FROM operational_logs ORDER BY id ASC LIMIT ?
-           )`,
-        )
-        .run(count - 10_000)
-    }
+    this.logs.prune(now)
   }
-
-  private countOperationalLogs(): number {
-    const row = this.database.prepare('SELECT COUNT(*) AS count FROM operational_logs').get() as {
-      count: number
-    }
-    return row.count
-  }
-
-  private toOperationalLogEntry(row: OperationalLogRow): OperationalLogEntry {
-    let details: OperationalLogDetails = {}
-    try {
-      details = JSON.parse(row.details_json) as OperationalLogDetails
-    } catch {
-      details = { invalidDetails: true }
-    }
-    return {
-      sequence: row.id,
-      timestamp: row.timestamp_utc,
-      level: row.level,
-      event: row.event,
-      message: row.message,
-      details,
-    }
-  }
-
   close(): void {
-    this.database.close()
+    this.sqlite.close()
   }
 }

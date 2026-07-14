@@ -36,12 +36,25 @@ Nesse modo, a aplicação abre em `http://127.0.0.1:3210`.
 
 1. Conecte o WhatsApp pelo QR exibido na interface.
 2. Atualize a lista e marque somente as conversas autorizadas.
-3. Opcionalmente, associe tags locais ou use regras `exact`, `contains` e `tag` para marcar candidatos.
-4. Configure a janela, por exemplo, últimas 24 horas e no máximo 500 mensagens por conversa.
-5. Escolha o ritmo **Conservador** ou **Balanceado**.
-6. Salve, sincronize e clique em **Baixar JSONL**.
+3. Configure a janela, por exemplo, últimas 24 horas e no máximo 500 mensagens por conversa.
+4. Escolha o ritmo **Conservador** ou **Balanceado**.
+5. Salve, sincronize e clique em **Baixar JSONL**.
 
-As regras nunca autorizam sozinhas um chat novo: somente os IDs confirmados nos checkboxes formam a allowlist. Tags são rótulos locais e não são enviadas ao WhatsApp.
+Os contratos internos preservam suporte a regras e tags locais para uma possível reativação futura,
+mas esses controles não são exibidos na interface atual. Somente os IDs confirmados nos checkboxes
+formam a allowlist.
+
+## Arquitetura
+
+- `src/features`: UI e controladores Vue agrupados por conexão, seleção, sincronização, mensagens,
+  diagnóstico e exportação.
+- `shared/contracts`: schemas e tipos de transporte separados por domínio; `shared/contracts.ts`
+  mantém o ponto de importação compatível.
+- `server/http`: adapters HTTP por domínio, sem regras de negócio na camada Express.
+- `server/chats`, `server/messages`, `server/sync` e `server/diagnostics`: serviços e repositórios
+  específicos de cada capacidade.
+- `server/infrastructure`: detalhes compartilhados de infraestrutura, como a conexão e o schema
+  SQLite.
 
 O SQLite, a sessão e as exportações ficam no diretório de dados do usuário. A interface mostra o caminho e oferece **Abrir pasta de dados**. Remover um chat da seleção interrompe novas coletas, mas não apaga registros anteriores.
 

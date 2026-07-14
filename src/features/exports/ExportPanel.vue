@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { shallowRef } from 'vue'
-import type { ExportRequest, ExportResult, SyncSettings } from '@shared/contracts'
+import {
+  EXPORT_LIMITS,
+  type ExportRequest,
+  type ExportResult,
+  type SyncSettings,
+} from '@shared/contracts'
 
 const props = defineProps<{
   settings: SyncSettings
@@ -58,7 +63,12 @@ function submitExport(): void {
       </label>
       <label class="field">
         <span>Máximo por conversa</span>
-        <input v-model.number="limitPerChat" type="number" min="1" max="5000" />
+        <input
+          v-model.number="limitPerChat"
+          type="number"
+          :min="EXPORT_LIMITS.minimumPerChat"
+          :max="EXPORT_LIMITS.maximumPerChat"
+        />
       </label>
     </div>
 

@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import DebugLogPanel from '../components/DebugLogPanel.vue'
+import DebugLogPanel from '../features/diagnostics/DebugLogPanel.vue'
 
 describe('DebugLogPanel', () => {
   it('is collapsed by default and renders structured events without message content', () => {

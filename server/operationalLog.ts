@@ -7,15 +7,27 @@ import type {
 import type { MessageDatabase } from './database.js'
 
 const SENSITIVE_DETAIL_KEYS = /(body|content|media|message|text)/i
+const LOG_RETENTION_INTERVAL_MS = 60 * 60 * 1000
 
 export class OperationalLogBuffer {
   private entries: OperationalLogEntry[] = []
   private nextSequence = 1
+  private cleanupTimer: NodeJS.Timeout | null = null
 
   constructor(
     private readonly capacity = 200,
     private readonly database?: MessageDatabase,
   ) {}
+
+  start(): void {
+    if (!this.database || this.cleanupTimer) return
+    this.database.pruneOperationalLogs()
+    this.cleanupTimer = setInterval(
+      () => this.database?.pruneOperationalLogs(),
+      LOG_RETENTION_INTERVAL_MS,
+    )
+    this.cleanupTimer.unref()
+  }
 
   add(
     level: OperationalLogLevel,
@@ -51,5 +63,10 @@ export class OperationalLogBuffer {
       entries: this.entries.filter((entry) => entry.sequence > effectiveAfter),
       cursor,
     }
+  }
+
+  close(): void {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer)
+    this.cleanupTimer = null
   }
 }

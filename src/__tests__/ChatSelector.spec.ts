@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import ChatSelector from '../components/ChatSelector.vue'
+import ChatSelector from '../features/chat-selection/ChatSelector.vue'
 
 const chats = [
   {

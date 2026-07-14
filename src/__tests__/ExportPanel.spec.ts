@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import ExportPanel from '../components/ExportPanel.vue'
+import ExportPanel from '../features/exports/ExportPanel.vue'
 
 function mountPanel() {
   return mount(ExportPanel, {

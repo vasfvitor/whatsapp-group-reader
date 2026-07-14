@@ -6,9 +6,7 @@ import {
   createIdleSyncProgress,
   type AppStatus,
   type ChatSummary,
-  type ChatType,
   type ConnectionState,
-  type MessageRecord,
   type SyncTrigger,
 } from '../shared/contracts.js'
 import type { ConfigStore } from './configStore.js'
@@ -27,16 +25,21 @@ import {
   type LoadProfileSettings,
   type RandomSource,
 } from './loadControl.js'
-import { normalizeMessage } from './messageNormalizer.js'
 import { OperationalLogBuffer } from './operationalLog.js'
+import {
+  ChatCatalog,
+  chatDisplayName,
+  chatType,
+  operationalChatName,
+  type WhatsAppChat,
+  type WhatsAppContact,
+} from './chats/chatCatalog.js'
+import { MessageCollector, type PersistOutcome } from './messages/messageCollector.js'
 
 const { Client, LocalAuth } = WhatsAppWeb
 
 type WhatsAppClient = WAWebJSTypes.Client
-type WhatsAppChat = WAWebJSTypes.Chat
-type WhatsAppContact = WAWebJSTypes.Contact
 type WhatsAppMessage = WAWebJSTypes.Message
-type PersistOutcome = 'ignored' | 'duplicate' | 'inserted'
 
 interface SyncOptions {
   trigger: SyncTrigger
@@ -48,42 +51,21 @@ interface SyncControl {
   paused: boolean
 }
 
-interface ContactMetadata {
-  name: string
-  phoneNumber: string
-  isSavedContact: boolean
-  isBusiness: boolean
-}
-
 class SyncInterruptedError extends Error {}
 
-const CONTACT_SERVERS = new Set(['c.us', 'lid', 's.whatsapp.net'])
 const HISTORY_CHUNK_SIZE = 50
-
-function chatDisplayName(chat: WhatsAppChat): string {
-  return chat.name || chat.id.user
-}
-
-function operationalChatName(chat: WhatsAppChat): string {
-  const name = chat.name?.trim()
-  const looksLikePhoneNumber = name && /^\+?[\d\s().-]{7,}$/.test(name)
-  if (name && !looksLikePhoneNumber) return name
-  return chat.isGroup ? 'Grupo sem nome' : 'Contato sem nome'
-}
 
 export class WhatsAppService {
   private client: WhatsAppClient | null = null
   private clientAbortController: AbortController | null = null
-  private readonly chats = new Map<string, WhatsAppChat>()
-  private readonly contactMetadata = new Map<string, ContactMetadata>()
-  private readonly authors = new Map<string, string>()
+  private readonly chatCatalog = new ChatCatalog()
+  private readonly messageCollector: MessageCollector
   private readonly operationalLog: OperationalLogBuffer
   private state: ConnectionState = 'stopped'
   private qrDataUrl: string | null = null
   private message = 'Aplicação iniciada.'
   private lastError: string | null = null
   private lastSyncAt: string | null = null
-  private collectedMessages: number
   private warnings: string[] = []
   private reconnectAttempt = 0
   private reconnectTimer: NodeJS.Timeout | null = null
@@ -103,11 +85,12 @@ export class WhatsAppService {
     private readonly dataDirectory: string,
     private readonly random: RandomSource = cryptoRandomSource,
   ) {
-    this.collectedMessages = database.countMessages()
+    this.messageCollector = new MessageCollector(database)
     this.operationalLog = new OperationalLogBuffer(200, database)
   }
 
   start(): void {
+    this.operationalLog.start()
     this.clearReconnectTimer()
     this.reconnectAttempt = 0
     this.createClient('starting')
@@ -120,7 +103,7 @@ export class WhatsAppService {
       message: this.message,
       lastError: this.lastError,
       lastSyncAt: this.lastSyncAt,
-      collectedMessages: this.collectedMessages,
+      collectedMessages: this.messageCollector.count,
       selectedChats: this.configStore.get().selectedChatIds.length,
       dataDirectory: this.dataDirectory,
       warnings: [...this.warnings],
@@ -136,13 +119,7 @@ export class WhatsAppService {
     if (refresh && !this.syncPromise) await this.refreshChats()
     const config = this.configStore.get()
 
-    return [...this.chats.values()]
-      .map((chat) => this.toSummary(chat, config.selectedChatIds, config.chatTags))
-      .filter((chat): chat is ChatSummary => chat !== null)
-      .sort((left, right) => {
-        if (left.type !== right.type) return left.type === 'group' ? -1 : 1
-        return left.name.localeCompare(right.name, 'pt-BR', { sensitivity: 'base' })
-      })
+    return this.chatCatalog.list(config.selectedChatIds, config.chatTags)
   }
 
   onConfigUpdated(): void {
@@ -227,6 +204,7 @@ export class WhatsAppService {
     this.signalSyncCancellation()
     this.state = 'stopped'
     await this.destroyClient()
+    this.operationalLog.close()
   }
 
   private createClient(initialState: ConnectionState): void {
@@ -349,15 +327,10 @@ export class WhatsAppService {
         )
       }
       if (this.client !== client) throw new SyncInterruptedError()
-      this.chats.clear()
-      this.contactMetadata.clear()
-      for (const contact of contacts) this.cacheContactMetadata(contact)
-      for (const chat of chats) {
-        if (this.chatType(chat)) this.chats.set(chat.id._serialized, chat)
-      }
+      this.chatCatalog.replace(chats, contacts)
       if (this.state === 'ready') this.message = 'Lista de conversas atualizada.'
       this.operationalLog.add('info', 'chats_refreshed', 'Lista de conversas atualizada.', {
-        chats: this.chats.size,
+        chats: this.chatCatalog.size,
       })
     })
 
@@ -401,7 +374,7 @@ export class WhatsAppService {
 
     for (const [chatIndex, chatId] of chatIds.entries()) {
       this.assertSyncActive(client, control)
-      const chat = this.chats.get(chatId)
+      const chat = this.chatCatalog.get(chatId)
       if (!chat) {
         this.syncProgress.skippedChats += 1
         this.operationalLog.add('warn', 'chat_missing', 'Conversa não encontrada no cache.', {
@@ -765,11 +738,11 @@ export class WhatsAppService {
     const chatId = message.fromMe ? message.to : message.from
     if (!this.configStore.get().selectedChatIds.includes(chatId)) return
 
-    let chat = this.chats.get(chatId)
+    let chat = this.chatCatalog.get(chatId)
     if (!chat) {
       chat = await message.getChat()
-      if (!this.chatType(chat)) return
-      this.chats.set(chatId, chat)
+      if (!chatType(chat)) return
+      this.chatCatalog.set(chat)
     }
 
     await this.persistMessage(message, chat)
@@ -779,89 +752,7 @@ export class WhatsAppService {
     message: WhatsAppMessage,
     chat: WhatsAppChat,
   ): Promise<PersistOutcome> {
-    const normalized = normalizeMessage({
-      id: message.id._serialized,
-      body: message.body,
-      type: message.type,
-      hasMedia: message.hasMedia,
-      timestamp: message.timestamp,
-    })
-    const chatType = this.chatType(chat)
-    if (!normalized || !chatType) return 'ignored'
-
-    const record: MessageRecord = {
-      chatId: chat.id._serialized,
-      chatName: chatDisplayName(chat),
-      chatType,
-      messageId: normalized.messageId,
-      author: await this.resolveAuthor(message),
-      timestamp: normalized.timestamp,
-      text: normalized.text,
-    }
-
-    if (!this.database.saveMessage(record, normalized.timestampUnix)) return 'duplicate'
-    this.collectedMessages += 1
-    return 'inserted'
-  }
-
-  private async resolveAuthor(message: WhatsAppMessage): Promise<string> {
-    if (message.fromMe) return this.client?.info?.pushname || 'Você'
-
-    const authorId = message.author || message.from
-    const cached = this.authors.get(authorId)
-    if (cached) return cached
-
-    try {
-      const contact = await message.getContact()
-      const name = contact.name || contact.pushname || contact.number || contact.id._serialized
-      this.authors.set(authorId, name)
-      return name
-    } catch {
-      return authorId
-    }
-  }
-
-  private chatType(chat: WhatsAppChat): ChatType | null {
-    if (chat.isGroup) return 'group'
-    if (CONTACT_SERVERS.has(chat.id.server)) return 'contact'
-    return null
-  }
-
-  private toSummary(
-    chat: WhatsAppChat,
-    selectedChatIds: string[],
-    chatTags: Record<string, string[]>,
-  ): ChatSummary | null {
-    const type = this.chatType(chat)
-    if (!type) return null
-    const id = chat.id._serialized
-    const contact = type === 'contact' ? this.contactMetadata.get(id) : undefined
-    return {
-      id,
-      name: contact?.name || chatDisplayName(chat),
-      type,
-      phoneNumber: contact?.phoneNumber ?? null,
-      isSavedContact: contact?.isSavedContact ?? false,
-      isBusiness: contact?.isBusiness ?? false,
-      tags: chatTags[id] ?? [],
-      selected: selectedChatIds.includes(id),
-    }
-  }
-
-  private cacheContactMetadata(contact: WhatsAppContact): void {
-    if (contact.isGroup || !CONTACT_SERVERS.has(contact.id.server)) return
-    const name =
-      contact.name ||
-      contact.verifiedName ||
-      contact.pushname ||
-      contact.shortName ||
-      contact.number
-    this.contactMetadata.set(contact.id._serialized, {
-      name,
-      phoneNumber: contact.number,
-      isSavedContact: contact.isMyContact,
-      isBusiness: contact.isBusiness,
-    })
+    return this.messageCollector.persist(message, chat, this.client)
   }
 
   private scheduleReconnect(): void {

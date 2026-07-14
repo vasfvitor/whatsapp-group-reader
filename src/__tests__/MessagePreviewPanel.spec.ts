@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import MessagePreviewPanel from '../components/MessagePreviewPanel.vue'
+import MessagePreviewPanel from '../features/messages/MessagePreviewPanel.vue'
 
 const chat = {
   id: 'team@g.us',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { shallowRef, watch } from 'vue'
 import type { ChatSummary, MessageRecord } from '@shared/contracts'
 
 const props = defineProps<{
@@ -14,8 +14,8 @@ const emit = defineEmits<{
   clear: []
 }>()
 
-const selectedChatId = ref('')
-const requested = ref(false)
+const selectedChatId = shallowRef('')
+const requested = shallowRef(false)
 
 watch(
   () => props.chats,

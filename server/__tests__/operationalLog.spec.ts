@@ -57,6 +57,7 @@ describe('OperationalLogBuffer', () => {
 
     expect(log.read(0).entries[0]?.details).toEqual({ chatName: 'Equipe' })
 
+    log.close()
     database.close()
   })
 })

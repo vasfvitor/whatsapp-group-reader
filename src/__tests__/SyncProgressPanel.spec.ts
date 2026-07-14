@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { SyncProgress } from '../../shared/contracts'
-import SyncProgressPanel from '../components/SyncProgressPanel.vue'
+import SyncProgressPanel from '../features/sync/SyncProgressPanel.vue'
 
 function progress(overrides: Partial<SyncProgress> = {}): SyncProgress {
   return {

@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import SyncSettingsForm from '../components/SyncSettingsForm.vue'
+import SyncSettingsForm from '../features/sync/SyncSettingsForm.vue'
 
 describe('SyncSettingsForm', () => {
   it('emits the selected load profile with the existing limits', async () => {

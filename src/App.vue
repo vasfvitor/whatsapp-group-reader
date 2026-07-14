@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import ConnectionCard from './components/ConnectionCard.vue'
-import ChatSelector from './components/ChatSelector.vue'
-import SyncSettingsForm from './components/SyncSettingsForm.vue'
-import ExportPanel from './components/ExportPanel.vue'
-import SyncProgressPanel from './components/SyncProgressPanel.vue'
-import DebugLogPanel from './components/DebugLogPanel.vue'
-import MessagePreviewPanel from './components/MessagePreviewPanel.vue'
-import { useReaderApp } from './composables/useReaderApp'
+import ConnectionCard from './features/connection/ConnectionCard.vue'
+import ChatSelector from './features/chat-selection/ChatSelector.vue'
+import SyncSettingsForm from './features/sync/SyncSettingsForm.vue'
+import ExportPanel from './features/exports/ExportPanel.vue'
+import SyncProgressPanel from './features/sync/SyncProgressPanel.vue'
+import DebugLogPanel from './features/diagnostics/DebugLogPanel.vue'
+import MessagePreviewPanel from './features/messages/MessagePreviewPanel.vue'
+import { useReaderApp } from './app/useReaderApp'
 
 const reader = useReaderApp()
 
@@ -78,9 +78,7 @@ function confirmForcedSync(): void {
       <DebugLogPanel :entries="reader.debugLog.value" />
 
       <MessagePreviewPanel
-        :chats="
-          reader.chats.value.filter((chat) => reader.config.value.selectedChatIds.includes(chat.id))
-        "
+        :chats="reader.selectedChats.value"
         :messages="reader.previewMessages.value"
         :loading="reader.previewLoading.value"
         :error="reader.previewError.value"
