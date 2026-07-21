@@ -4,7 +4,14 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createDefaultConfig,
   createIdleSyncProgress,
+  type AppConfig,
   type AppStatus,
+  type ChatSummary,
+  type ExportRequest,
+  type ExportResult,
+  type MessageRecord,
+  type OperationalLogEntry,
+  type OperationalLogResponse,
 } from '../../shared/contracts.js'
 import { createApp } from '../app.js'
 
@@ -24,14 +31,14 @@ const status: AppStatus = {
 function createHarness() {
   let config = { ...createDefaultConfig(), selectedChatIds: ['allowed@g.us'] }
   const configStore = {
-    get: vi.fn(() => structuredClone(config)),
-    save: vi.fn(async (next) => {
+    get: vi.fn<() => AppConfig>(() => structuredClone(config)),
+    save: vi.fn<(next: AppConfig) => Promise<AppConfig>>(async (next) => {
       config = structuredClone(next)
       return structuredClone(config)
     }),
   }
   const database = {
-    listOperationalLogs: vi.fn(() => [
+    listOperationalLogs: vi.fn<() => OperationalLogEntry[]>(() => [
       {
         sequence: 1,
         timestamp: '2026-07-13T12:00:00.000Z',
@@ -41,23 +48,23 @@ function createHarness() {
         details: {},
       },
     ]),
-    previewMessages: vi.fn(() => []),
+    previewMessages: vi.fn<() => MessageRecord[]>(() => []),
   }
   const whatsappService = {
-    getStatus: vi.fn(() => status),
-    getOperationalLog: vi.fn(() => ({ entries: [], cursor: 0 })),
-    getChats: vi.fn(async () => []),
-    onConfigUpdated: vi.fn(),
-    syncSelected: vi.fn(),
-    pauseSync: vi.fn(),
-    resumeSync: vi.fn(),
-    cancelSync: vi.fn(),
-    resetSession: vi.fn(async () => undefined),
+    getStatus: vi.fn<() => AppStatus>(() => status),
+    getOperationalLog: vi.fn<() => OperationalLogResponse>(() => ({ entries: [], cursor: 0 })),
+    getChats: vi.fn<() => Promise<ChatSummary[]>>(async () => []),
+    onConfigUpdated: vi.fn<() => void>(),
+    syncSelected: vi.fn<() => void>(),
+    pauseSync: vi.fn<() => void>(),
+    resumeSync: vi.fn<() => void>(),
+    cancelSync: vi.fn<() => void>(),
+    resetSession: vi.fn<() => Promise<void>>(async () => undefined),
   }
   const exportService = {
-    create: vi.fn(),
-    resolveFile: vi.fn(),
-    openDataDirectory: vi.fn(async () => undefined),
+    create: vi.fn<(payload: ExportRequest, chatIds: string[]) => Promise<ExportResult>>(),
+    resolveFile: vi.fn<(id: string) => string | null>(),
+    openDataDirectory: vi.fn<() => Promise<void>>(async () => undefined),
   }
 
   const app = createApp({
@@ -80,9 +87,8 @@ describe('HTTP API contracts', () => {
 
   it('rejects non-local hosts before dispatching a route', async () => {
     const { app } = createHarness()
-    await request(app).get('/api/status').set('host', 'example.com').expect(403, {
-      error: 'Acesso permitido somente pela aplicação local.',
-    })
+    const response = await request(app).get('/api/status').set('host', 'example.com').expect(403)
+    expect(response.body).toEqual({ error: 'Acesso permitido somente pela aplicação local.' })
   })
 
   it('validates configuration payloads and preserves the error envelope', async () => {
@@ -102,7 +108,7 @@ describe('HTTP API contracts', () => {
     expect(database.previewMessages).toHaveBeenCalledWith('allowed@g.us', 20)
   })
 
-  it('exports only the configured allowlist, ignoring client-supplied chat IDs', async () => {
+  it('exports scoped to the configured allowlist', async () => {
     const { app, exportService } = createHarness()
     exportService.create.mockResolvedValue({
       id: 'messages-test.jsonl',
@@ -117,7 +123,6 @@ describe('HTTP API contracts', () => {
         from: '2026-07-01T00:00:00.000Z',
         to: '2026-07-02T00:00:00.000Z',
         limitPerChat: 50,
-        chatIds: ['blocked@g.us'],
       })
       .expect(201)
 
@@ -129,6 +134,22 @@ describe('HTTP API contracts', () => {
       },
       ['allowed@g.us'],
     )
+  })
+
+  it('rejects export requests with unknown keys instead of silently ignoring them', async () => {
+    const { app, exportService } = createHarness()
+
+    await request(app)
+      .post('/api/exports')
+      .send({
+        from: '2026-07-01T00:00:00.000Z',
+        to: '2026-07-02T00:00:00.000Z',
+        limitPerChat: 50,
+        chatIds: ['blocked@g.us'],
+      })
+      .expect(400)
+
+    expect(exportService.create).not.toHaveBeenCalled()
   })
 
   it('exports diagnostic logs as JSONL', async () => {

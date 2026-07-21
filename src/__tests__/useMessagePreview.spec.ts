@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
-const requestJson = vi.hoisted(() => vi.fn())
+const requestJson = vi.hoisted(() =>
+  vi.fn<(url: string, init?: RequestInit) => Promise<unknown>>(),
+)
 
 vi.mock('@/shared/api/httpClient', () => ({ requestJson }))
 

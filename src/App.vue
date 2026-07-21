@@ -28,6 +28,9 @@ function confirmForcedSync(): void {
 <template>
   <main class="app-shell">
     <p v-if="reader.error.value" class="app-error" role="alert">{{ reader.error.value }}</p>
+    <p v-if="reader.connectionError.value" class="app-error" role="alert">
+      {{ reader.connectionError.value }}
+    </p>
 
     <div v-if="reader.loading.value" class="loading-state">Carregando aplicação local…</div>
 

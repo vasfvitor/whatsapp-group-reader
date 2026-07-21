@@ -1,5 +1,4 @@
 // @vitest-environment node
-/// <reference path="../write-file-atomic.d.ts" />
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createDefaultConfig,
@@ -95,10 +94,11 @@ describe('WhatsAppService pacing', () => {
     const operation = vi.fn<() => Promise<string>>().mockRejectedValue(new Error('still failing'))
 
     const result = harness.readWithRetry(operation, retryPolicy, client, undefined, null, 'Leitura')
-    const assertion = expect(result).rejects.toThrow('still failing')
-    await vi.advanceTimersByTimeAsync(6_000)
+    await Promise.all([
+      expect(result).rejects.toThrow('still failing'),
+      vi.advanceTimersByTimeAsync(6_000),
+    ])
 
-    await assertion
     expect(operation).toHaveBeenCalledTimes(3)
   })
 
@@ -119,11 +119,11 @@ describe('WhatsAppService pacing', () => {
       null,
       'Leitura',
     )
-    const assertion = expect(result).rejects.toBeInstanceOf(Error)
-    await vi.advanceTimersByTimeAsync(0)
-    abortController.abort()
+    await Promise.all([
+      expect(result).rejects.toBeInstanceOf(Error),
+      vi.advanceTimersByTimeAsync(0).then(() => abortController.abort()),
+    ])
 
-    await assertion
     expect(operation).toHaveBeenCalledTimes(1)
   })
 
@@ -159,8 +159,10 @@ describe('WhatsAppService pacing', () => {
     const service = createService()
     const harness = service as unknown as ServiceHarness
     let resolveChats!: (value: []) => void
-    const getChats = vi.fn(() => new Promise<[]>((resolve) => (resolveChats = resolve)))
-    const getContacts = vi.fn().mockResolvedValue([])
+    const getChats = vi.fn<() => Promise<[]>>(
+      () => new Promise<[]>((resolve) => (resolveChats = resolve)),
+    )
+    const getContacts = vi.fn<() => Promise<object[]>>().mockResolvedValue([])
     const client = { getChats, getContacts }
     harness.client = client
     harness.clientAbortController = new AbortController()
@@ -183,8 +185,10 @@ describe('WhatsAppService pacing', () => {
     const harness = service as unknown as ServiceHarness
     const id = { _serialized: '5511999999999@c.us', server: 'c.us', user: '5511999999999' }
     const client = {
-      getChats: vi.fn().mockResolvedValue([{ id, isGroup: false, name: '+55 11 99999-9999' }]),
-      getContacts: vi.fn().mockResolvedValue([
+      getChats: vi
+        .fn<() => Promise<object[]>>()
+        .mockResolvedValue([{ id, isGroup: false, name: '+55 11 99999-9999' }]),
+      getContacts: vi.fn<() => Promise<object[]>>().mockResolvedValue([
         {
           id,
           isGroup: false,
@@ -218,8 +222,12 @@ describe('WhatsAppService pacing', () => {
     const harness = service as unknown as ServiceHarness
     const id = { _serialized: '5511999999999@c.us', server: 'c.us', user: '5511999999999' }
     const client = {
-      getChats: vi.fn().mockResolvedValue([{ id, isGroup: false, name: '+55 11 99999-9999' }]),
-      getContacts: vi.fn().mockRejectedValue(new Error('metadata unavailable')),
+      getChats: vi
+        .fn<() => Promise<object[]>>()
+        .mockResolvedValue([{ id, isGroup: false, name: '+55 11 99999-9999' }]),
+      getContacts: vi
+        .fn<() => Promise<object[]>>()
+        .mockRejectedValue(new Error('metadata unavailable')),
     }
     harness.client = client
     harness.clientAbortController = new AbortController()

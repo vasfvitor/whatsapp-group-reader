@@ -2,6 +2,7 @@
 import { computed, shallowRef } from 'vue'
 import {
   EXPORT_LIMITS,
+  exportRequestSchema,
   type ExportRequest,
   type ExportResult,
   type SyncSettings,
@@ -35,30 +36,32 @@ const from = shallowRef(
 const to = shallowRef(toLocalInput(now))
 const limitPerChat = shallowRef<number | ''>(props.settings.maxMessagesPerChat)
 
+function toIsoOrRaw(value: string): string {
+  const timestamp = Date.parse(value)
+  return Number.isNaN(timestamp) ? value : new Date(timestamp).toISOString()
+}
+
+const validation = computed(() =>
+  exportRequestSchema.safeParse({
+    from: toIsoOrRaw(from.value),
+    to: toIsoOrRaw(to.value),
+    limitPerChat: typeof limitPerChat.value === 'number' ? limitPerChat.value : Number.NaN,
+  } satisfies ExportRequest),
+)
+
+const invalidFields = computed(() => {
+  const result = validation.value
+  return new Set(result.success ? [] : result.error.issues.map((issue) => String(issue.path[0])))
+})
+
 const exportValidationError = computed(() => {
-  const fromTimestamp = Date.parse(from.value)
-  const toTimestamp = Date.parse(to.value)
-  const limit = Number(limitPerChat.value)
-  if (!from.value || Number.isNaN(fromTimestamp)) return 'Informe uma data inicial válida.'
-  if (!to.value || Number.isNaN(toTimestamp)) return 'Informe uma data final válida.'
-  if (fromTimestamp > toTimestamp) return 'A data inicial deve ser anterior à data final.'
-  if (
-    !Number.isInteger(limit) ||
-    limit < EXPORT_LIMITS.minimumPerChat ||
-    limit > EXPORT_LIMITS.maximumPerChat
-  ) {
-    return `Informe um limite inteiro entre ${EXPORT_LIMITS.minimumPerChat} e ${EXPORT_LIMITS.maximumPerChat}.`
-  }
-  return null
+  const result = validation.value
+  return result.success ? null : (result.error.issues[0]?.message ?? null)
 })
 
 function submitExport(): void {
-  if (exportValidationError.value) return
-  emit('export', {
-    from: new Date(from.value).toISOString(),
-    to: new Date(to.value).toISOString(),
-    limitPerChat: Number(limitPerChat.value),
-  })
+  const result = validation.value
+  if (result.success) emit('export', result.data)
 }
 </script>
 
@@ -73,30 +76,20 @@ function submitExport(): void {
     <div class="export-grid">
       <label class="field">
         <span>De</span>
-        <input
-          v-model="from"
-          type="datetime-local"
-          required
-          :aria-invalid="Boolean(exportValidationError)"
-        />
+        <input v-model="from" type="datetime-local" :aria-invalid="invalidFields.has('from')" />
       </label>
       <label class="field">
         <span>Até</span>
-        <input
-          v-model="to"
-          type="datetime-local"
-          required
-          :aria-invalid="Boolean(exportValidationError)"
-        />
+        <input v-model="to" type="datetime-local" :aria-invalid="invalidFields.has('to')" />
       </label>
       <label class="field">
         <span>Máximo por conversa</span>
         <input
           v-model.number="limitPerChat"
           type="number"
-          required
           :min="EXPORT_LIMITS.minimumPerChat"
           :max="EXPORT_LIMITS.maximumPerChat"
+          :aria-invalid="invalidFields.has('limitPerChat')"
         />
       </label>
     </div>

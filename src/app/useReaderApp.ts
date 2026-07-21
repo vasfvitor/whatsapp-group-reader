@@ -29,9 +29,11 @@ export function useReaderApp() {
   const status = shallowRef<AppStatus>(initialStatus)
   const config = shallowRef<AppConfig>(createDefaultConfig())
   const error = shallowRef<string | null>(null)
+  const connectionError = shallowRef<string | null>(null)
   const loading = shallowRef(true)
   const saving = shallowRef(false)
   let pollTimer: number | null = null
+  let consecutivePollFailures = 0
 
   async function run<T>(operation: () => Promise<T>): Promise<T | null> {
     error.value = null
@@ -54,7 +56,8 @@ export function useReaderApp() {
     try {
       const next = await requestJson<AppStatus>('/api/status')
       status.value = next
-      error.value = null
+      connectionError.value = null
+      consecutivePollFailures = 0
       if (
         (next.state === 'ready' || next.state === 'syncing') &&
         previousState !== 'ready' &&
@@ -62,8 +65,12 @@ export function useReaderApp() {
       ) {
         await selection.refreshChats()
       }
-    } catch (caught) {
-      error.value = caught instanceof Error ? caught.message : String(caught)
+    } catch {
+      // A single failure is usually a transient local restart; only surface persistent ones.
+      consecutivePollFailures += 1
+      if (consecutivePollFailures >= 2) {
+        connectionError.value = 'Não foi possível contatar o processo local. Tentando reconectar…'
+      }
     }
   }
 
@@ -117,6 +124,7 @@ export function useReaderApp() {
     status: shallowReadonly(status),
     config: shallowReadonly(config),
     error: shallowReadonly(error),
+    connectionError: shallowReadonly(connectionError),
     loading: shallowReadonly(loading),
     saving: shallowReadonly(saving),
     chats: selection.chats,

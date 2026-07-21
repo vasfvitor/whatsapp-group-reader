@@ -38,7 +38,31 @@ describe('ExportPanel', () => {
     await dateInputs[0]!.setValue('')
 
     expect(wrapper.get('[role="alert"]').text()).toBe('Informe uma data inicial válida.')
-    expect(wrapper.findAll('button').find((button) => button.text() === 'Baixar JSONL')!.attributes('disabled')).toBeDefined()
+    expect(
+      wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Baixar JSONL')!
+        .attributes('disabled'),
+    ).toBeDefined()
     expect(wrapper.emitted('export')).toBeUndefined()
+  })
+
+  it('marks only the offending field as invalid', async () => {
+    const wrapper = mountPanel()
+    const dateInputs = wrapper.findAll('input[type="datetime-local"]')
+    const limitInput = wrapper.get('input[type="number"]')
+
+    await limitInput.setValue(9999)
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('Informe um limite inteiro entre 1 e 5000.')
+    expect(limitInput.attributes('aria-invalid')).toBe('true')
+    expect(dateInputs[0]!.attributes('aria-invalid')).toBe('false')
+    expect(dateInputs[1]!.attributes('aria-invalid')).toBe('false')
+
+    await limitInput.setValue(100)
+    await dateInputs[1]!.setValue('')
+
+    expect(dateInputs[1]!.attributes('aria-invalid')).toBe('true')
+    expect(limitInput.attributes('aria-invalid')).toBe('false')
   })
 })

@@ -2,15 +2,17 @@ import { z } from 'zod'
 
 export const EXPORT_LIMITS = { minimumPerChat: 1, maximumPerChat: 5000 } as const
 
+const limitMessage = `Informe um limite inteiro entre ${EXPORT_LIMITS.minimumPerChat} e ${EXPORT_LIMITS.maximumPerChat}.`
+
 export const exportRequestSchema = z
-  .object({
-    from: z.iso.datetime({ offset: true }),
-    to: z.iso.datetime({ offset: true }),
+  .strictObject({
+    from: z.iso.datetime({ offset: true, error: 'Informe uma data inicial válida.' }),
+    to: z.iso.datetime({ offset: true, error: 'Informe uma data final válida.' }),
     limitPerChat: z
-      .number()
-      .int()
-      .min(EXPORT_LIMITS.minimumPerChat)
-      .max(EXPORT_LIMITS.maximumPerChat),
+      .number({ error: limitMessage })
+      .int(limitMessage)
+      .min(EXPORT_LIMITS.minimumPerChat, limitMessage)
+      .max(EXPORT_LIMITS.maximumPerChat, limitMessage),
   })
   .refine((value) => Date.parse(value.from) <= Date.parse(value.to), {
     message: 'A data inicial deve ser anterior à data final.',

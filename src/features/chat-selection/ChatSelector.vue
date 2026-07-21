@@ -36,7 +36,6 @@ function toggleChat(chatId: string, selected: boolean): void {
 }
 
 function selectVisible(selected: boolean): void {
-  if (props.disabled) return
   const next = new Set(props.selectedChatIds)
   for (const chat of visibleChats.value) {
     if (selected) next.add(chat.id)

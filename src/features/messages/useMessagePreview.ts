@@ -23,7 +23,9 @@ export function useMessagePreview() {
       if (activeRequest !== request) return
       messages.value = response.messages
     } catch (caught) {
-      if (activeRequest !== request || request.signal.aborted) return
+      // Every path that replaces activeRequest aborts first, so the token check
+      // also covers abort-triggered rejections.
+      if (activeRequest !== request) return
       error.value = caught instanceof Error ? caught.message : String(caught)
     } finally {
       if (activeRequest === request) {
