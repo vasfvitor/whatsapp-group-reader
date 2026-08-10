@@ -1,8 +1,10 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { VueQueryPlugin } from '@tanstack/vue-query'
 import { createDefaultConfig, createIdleSyncProgress, type AppStatus } from '@shared/contracts'
 import { requestJson } from '@/shared/api/httpClient'
+import { createAppQueryClient } from '@/shared/api/queryClient'
 import { useReaderApp } from '../app/useReaderApp'
 
 vi.mock('@/shared/api/httpClient', () => ({
@@ -37,7 +39,11 @@ const Harness = defineComponent({
 })
 
 async function mountReader(): Promise<void> {
-  wrapper = mount(Harness)
+  wrapper = mount(Harness, {
+    global: {
+      plugins: [[VueQueryPlugin, { queryClient: createAppQueryClient() }]],
+    },
+  })
   await flushPromises()
 }
 

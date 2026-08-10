@@ -1,4 +1,5 @@
-import { computed, shallowReadonly, shallowRef, type ShallowRef } from 'vue'
+import { computed, type ShallowRef } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import type { AppConfig, ChatSummary, Source, SyncSettings } from '@shared/contracts'
 import { matchingChatIds } from '@shared/sourceMatcher'
 import { isChatAuthorized } from '@shared/configRules'
@@ -6,29 +7,36 @@ import { requestJson } from '@/shared/api/httpClient'
 import type { RunOperation } from '@/app/applicationTypes'
 
 export function useChatSelection(config: ShallowRef<AppConfig>, run: RunOperation) {
-  const chats = shallowRef<ChatSummary[]>([])
-  const refreshing = shallowRef(false)
+  const queryClient = useQueryClient()
+  const query = useQuery({
+    queryKey: ['chats'],
+    queryFn: () => requestJson<ChatSummary[]>('/api/chats'),
+    enabled: false,
+  })
+
+  const chats = computed<ChatSummary[]>(() => query.data.value ?? [])
+  const refreshing = computed(() => query.isFetching.value)
   const selectedChats = computed(() =>
     chats.value.filter((chat) => isChatAuthorized(config.value, chat.id)),
   )
+
   async function refreshChats(force = false): Promise<void> {
-    if (refreshing.value) return
-    refreshing.value = true
-    try {
-      const result = await run(() =>
-        requestJson<ChatSummary[]>(`/api/chats${force ? '?refresh=true' : ''}`),
-      )
-      if (result) chats.value = result
-    } finally {
-      refreshing.value = false
-    }
+    // fetchQuery deduplicates concurrent refreshes on the same key.
+    await run(() =>
+      queryClient.fetchQuery({
+        queryKey: ['chats'],
+        queryFn: () => requestJson<ChatSummary[]>(`/api/chats${force ? '?refresh=true' : ''}`),
+      }),
+    )
   }
   function setSelectedChatIds(ids: string[]): void {
     config.value = { ...config.value, selectedChatIds: [...new Set(ids)] }
   }
   function setChatTags(chatTags: Record<string, string[]>): void {
     config.value = { ...config.value, chatTags }
-    chats.value = chats.value.map((chat) => ({ ...chat, tags: chatTags[chat.id] ?? [] }))
+    queryClient.setQueryData<ChatSummary[]>(['chats'], (current) =>
+      current?.map((chat) => ({ ...chat, tags: chatTags[chat.id] ?? [] })),
+    )
   }
   function setSources(sources: Source[]): void {
     config.value = { ...config.value, sources }
@@ -42,8 +50,8 @@ export function useChatSelection(config: ShallowRef<AppConfig>, run: RunOperatio
     return matches.length
   }
   return {
-    chats: shallowReadonly(chats),
-    refreshing: shallowReadonly(refreshing),
+    chats,
+    refreshing,
     selectedChats,
     refreshChats,
     setSelectedChatIds,

@@ -25,6 +25,7 @@
     "format": "prettier --write --experimental-cli src/ server/ shared/"
   },
   "dependencies": {
+    "@tanstack/vue-query": "^5.101.4",
     "better-sqlite3": "^12.4.1",
     "env-paths": "^3.0.0",
     "express": "^5.1.0",

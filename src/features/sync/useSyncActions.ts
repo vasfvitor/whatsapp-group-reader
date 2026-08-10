@@ -1,24 +1,30 @@
-import { computed, type ShallowRef } from 'vue'
+import { computed, type ComputedRef } from 'vue'
+import { useQueryClient } from '@tanstack/vue-query'
 import type { AppStatus } from '@shared/contracts'
 import { requestJson } from '@/shared/api/httpClient'
 import type { RunOperation } from '@/app/applicationTypes'
 
-export function useSyncActions(status: ShallowRef<AppStatus>, run: RunOperation) {
+export function useSyncActions(status: ComputedRef<AppStatus>, run: RunOperation) {
+  const queryClient = useQueryClient()
   const syncing = computed(() => status.value.syncProgress.phase !== 'idle')
+
+  function publishStatus(result: AppStatus | null): void {
+    if (result) queryClient.setQueryData(['status'], result)
+  }
   async function syncNow(forceRecent = false): Promise<void> {
-    const result = await run(() =>
-      requestJson<AppStatus>('/api/sync', {
-        method: 'POST',
-        body: JSON.stringify({ forceRecent }),
-      }),
+    publishStatus(
+      await run(() =>
+        requestJson<AppStatus>('/api/sync', {
+          method: 'POST',
+          body: JSON.stringify({ forceRecent }),
+        }),
+      ),
     )
-    if (result) status.value = result
   }
   async function control(action: 'pause' | 'resume' | 'cancel'): Promise<void> {
-    const result = await run(() =>
-      requestJson<AppStatus>(`/api/sync/${action}`, { method: 'POST' }),
+    publishStatus(
+      await run(() => requestJson<AppStatus>(`/api/sync/${action}`, { method: 'POST' })),
     )
-    if (result) status.value = result
   }
   return {
     syncing,

@@ -1,4 +1,5 @@
-import { onBeforeUnmount, onMounted, shallowReadonly, shallowRef } from 'vue'
+import { computed, shallowReadonly, shallowRef, watch } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import {
   createDefaultConfig,
   createIdleSyncProgress,
@@ -25,15 +26,16 @@ const initialStatus: AppStatus = {
   syncProgress: createIdleSyncProgress(),
 }
 
+function isConnected(state: AppStatus['state']): boolean {
+  return state === 'ready' || state === 'syncing'
+}
+
 export function useReaderApp() {
-  const status = shallowRef<AppStatus>(initialStatus)
+  const queryClient = useQueryClient()
   const config = shallowRef<AppConfig>(createDefaultConfig())
+  const configLoaded = shallowRef(false)
   const error = shallowRef<string | null>(null)
-  const connectionError = shallowRef<string | null>(null)
-  const loading = shallowRef(true)
   const saving = shallowRef(false)
-  let pollTimer: number | null = null
-  let consecutivePollFailures = 0
 
   async function run<T>(operation: () => Promise<T>): Promise<T | null> {
     error.value = null
@@ -45,49 +47,47 @@ export function useReaderApp() {
     }
   }
 
+  const statusQuery = useQuery({
+    queryKey: ['status'],
+    queryFn: () => requestJson<AppStatus>('/api/status'),
+    refetchInterval: 2_000,
+    refetchIntervalInBackground: true,
+  })
+  const status = computed<AppStatus>(() => statusQuery.data.value ?? initialStatus)
+  // A single failure is usually a transient local restart; only surface persistent ones.
+  const errorCountAtLastSuccess = shallowRef(0)
+  watch(
+    () => statusQuery.dataUpdatedAt.value,
+    () => {
+      errorCountAtLastSuccess.value = statusQuery.errorUpdateCount.value
+    },
+  )
+  const connectionError = computed(() =>
+    statusQuery.errorUpdateCount.value - errorCountAtLastSuccess.value >= 2
+      ? 'Não foi possível contatar o processo local. Tentando reconectar…'
+      : null,
+  )
+
   const selection = useChatSelection(config, run)
   const diagnostics = useOperationalLog()
   const preview = useMessagePreview()
   const sync = useSyncActions(status, run)
   const exports = useExports(run)
 
-  async function pollStatus(): Promise<void> {
-    const previousState = status.value.state
-    try {
-      const next = await requestJson<AppStatus>('/api/status')
-      status.value = next
-      connectionError.value = null
-      consecutivePollFailures = 0
-      if (
-        (next.state === 'ready' || next.state === 'syncing') &&
-        previousState !== 'ready' &&
-        previousState !== 'syncing'
-      ) {
-        await selection.refreshChats()
+  watch(
+    () => status.value.state,
+    (next, previous) => {
+      if (isConnected(next) && !isConnected(previous ?? 'starting')) {
+        void selection.refreshChats()
       }
-    } catch {
-      // A single failure is usually a transient local restart; only surface persistent ones.
-      consecutivePollFailures += 1
-      if (consecutivePollFailures >= 2) {
-        connectionError.value = 'Não foi possível contatar o processo local. Tentando reconectar…'
-      }
-    }
-  }
+    },
+  )
 
-  async function load(): Promise<void> {
-    loading.value = true
-    const [loadedStatus, loadedConfig] = await Promise.all([
-      run(() => requestJson<AppStatus>('/api/status')),
-      run(() => requestJson<AppConfig>('/api/config')),
-    ])
-    if (loadedStatus) status.value = loadedStatus
-    if (loadedConfig) config.value = loadedConfig
-    if (loadedStatus?.state === 'ready' || loadedStatus?.state === 'syncing') {
-      await selection.refreshChats()
-    }
-    await diagnostics.poll()
-    loading.value = false
-  }
+  void run(() => requestJson<AppConfig>('/api/config')).then((loaded) => {
+    if (loaded) config.value = loaded
+    configLoaded.value = true
+  })
+  const loading = computed(() => !configLoaded.value || statusQuery.isPending.value)
 
   async function saveConfig(): Promise<void> {
     saving.value = true
@@ -106,26 +106,15 @@ export function useReaderApp() {
 
   async function resetSession(): Promise<void> {
     const result = await run(() => requestJson<AppStatus>('/api/session/reset', { method: 'POST' }))
-    if (result) status.value = result
+    if (result) queryClient.setQueryData(['status'], result)
   }
 
-  onMounted(() => {
-    void load()
-    pollTimer = window.setInterval(() => {
-      void pollStatus()
-      void diagnostics.poll()
-    }, 2_000)
-  })
-  onBeforeUnmount(() => {
-    if (pollTimer !== null) window.clearInterval(pollTimer)
-  })
-
   return {
-    status: shallowReadonly(status),
+    status,
     config: shallowReadonly(config),
     error: shallowReadonly(error),
-    connectionError: shallowReadonly(connectionError),
-    loading: shallowReadonly(loading),
+    connectionError,
+    loading,
     saving: shallowReadonly(saving),
     chats: selection.chats,
     refreshing: selection.refreshing,

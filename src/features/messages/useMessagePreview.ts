@@ -1,47 +1,39 @@
-import { computed, shallowReadonly, shallowRef } from 'vue'
+import { computed, shallowRef } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import type { MessagePreviewResponse, MessageRecord } from '@shared/contracts'
 import { requestJson } from '@/shared/api/httpClient'
 
 export function useMessagePreview() {
-  const messages = shallowRef<MessageRecord[]>([])
-  const error = shallowRef<string | null>(null)
-  const pending = shallowRef<AbortController | null>(null)
-  const loading = computed(() => pending.value !== null)
+  const queryClient = useQueryClient()
+  const chatId = shallowRef<string | null>(null)
 
-  async function load(chatId: string): Promise<void> {
-    pending.value?.abort()
-    const request = new AbortController()
-    pending.value = request
-    error.value = null
-    messages.value = []
-    try {
-      const response = await requestJson<MessagePreviewResponse>(
-        `/api/messages/preview?chatId=${encodeURIComponent(chatId)}`,
-        { signal: request.signal },
-      )
-      if (pending.value !== request) return
-      messages.value = response.messages
-    } catch (caught) {
-      // Every path that replaces pending aborts first, so the token check
-      // also covers abort-triggered rejections.
-      if (pending.value !== request) return
-      error.value = caught instanceof Error ? caught.message : String(caught)
-    } finally {
-      if (pending.value === request) pending.value = null
+  const query = useQuery({
+    queryKey: computed(() => ['preview', chatId.value] as const),
+    queryFn: ({ signal }) =>
+      requestJson<MessagePreviewResponse>(
+        `/api/messages/preview?chatId=${encodeURIComponent(chatId.value ?? '')}`,
+        { signal },
+      ),
+    enabled: computed(() => chatId.value !== null),
+  })
+
+  const messages = computed<MessageRecord[]>(() => query.data.value?.messages ?? [])
+  const loading = computed(() => query.isFetching.value)
+  const error = computed(() => (query.error.value ? query.error.value.message : null))
+
+  function load(nextChatId: string): void {
+    if (chatId.value === nextChatId) {
+      void query.refetch()
+      return
     }
+    chatId.value = nextChatId
   }
 
   function clear(): void {
-    pending.value?.abort()
-    pending.value = null
-    messages.value = []
-    error.value = null
+    void queryClient.cancelQueries({ queryKey: ['preview'] })
+    queryClient.removeQueries({ queryKey: ['preview'] })
+    chatId.value = null
   }
-  return {
-    messages: shallowReadonly(messages),
-    loading,
-    error: shallowReadonly(error),
-    load,
-    clear,
-  }
+
+  return { messages, loading, error, load, clear }
 }
