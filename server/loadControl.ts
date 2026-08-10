@@ -66,6 +66,33 @@ export const LOAD_PROFILES: Record<LoadProfile, LoadProfileSettings> = {
   },
 }
 
+export interface ReadRetryHooks {
+  /** Throws when the read should no longer proceed (cancelled, aborted, stale client). */
+  guard: () => void
+  /** Waits between attempts; rejects to abort the retry loop. */
+  delay: (attempt: number) => Promise<void>
+  /** Awaited before every attempt (e.g. while the sync is paused). */
+  beforeAttempt?: () => Promise<void>
+}
+
+export async function withReadRetry<T>(
+  operation: () => Promise<T>,
+  policy: BackoffPolicy,
+  hooks: ReadRetryHooks,
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    if (hooks.beforeAttempt) await hooks.beforeAttempt()
+    hooks.guard()
+    try {
+      return await operation()
+    } catch (error) {
+      hooks.guard()
+      if (attempt >= policy.maxRetries) throw error
+      await hooks.delay(attempt)
+    }
+  }
+}
+
 export function sampleExponentialBackoff(
   policy: BackoffPolicy,
   attempt: number,

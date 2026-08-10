@@ -6,34 +6,32 @@ import {
   type ConnectionState,
 } from '../../shared/contracts.js'
 import type { BackoffPolicy, RandomSource } from '../loadControl.js'
+import { SyncInterruptedError, type SyncEngine } from '../sync/syncEngine.js'
 import { WhatsAppService } from '../whatsappService.js'
 
-interface SyncControlHarness {
-  cancelled: boolean
-  paused: boolean
+interface EngineHarness {
+  runAbort: AbortController | null
+  progress: ReturnType<typeof createIdleSyncProgress>
+  pacedDelay(sample: () => number, signal: AbortSignal): Promise<void>
+  retryingRead<T>(
+    operation: () => Promise<T>,
+    policy: BackoffPolicy,
+    label: string,
+    signal: AbortSignal,
+  ): Promise<T>
 }
 
 interface ServiceHarness {
   client: object | null
   clientAbortController: AbortController | null
   state: ConnectionState
-  syncPromise: Promise<void> | null
-  syncControl: SyncControlHarness | null
-  syncProgress: ReturnType<typeof createIdleSyncProgress>
-  pauseResolve: (() => void) | null
-  readWithRetry<T>(
+  syncEngine: SyncEngine
+  refreshRead<T>(
     operation: () => Promise<T>,
     policy: BackoffPolicy,
-    client: object,
-    signal: AbortSignal | undefined,
-    control: SyncControlHarness | null,
+    signal: AbortSignal,
     label: string,
   ): Promise<T>
-  waitForControlledDelay(
-    milliseconds: () => number,
-    client: object,
-    control: SyncControlHarness,
-  ): Promise<void>
 }
 
 const centeredRandom: RandomSource = { next: () => 0.5 }
@@ -61,6 +59,10 @@ function createService(): WhatsAppService {
   )
 }
 
+function engineHarness(service: WhatsAppService): EngineHarness {
+  return (service as unknown as ServiceHarness).syncEngine as unknown as EngineHarness
+}
+
 afterEach(() => {
   vi.useRealTimers()
 })
@@ -68,17 +70,19 @@ afterEach(() => {
 describe('WhatsAppService pacing', () => {
   it('retries a failed read at most twice with exponential delays', async () => {
     vi.useFakeTimers()
-    const service = createService()
-    const harness = service as unknown as ServiceHarness
-    const client = {}
-    harness.client = client
+    const engine = engineHarness(createService())
     const operation = vi
       .fn<() => Promise<string>>()
       .mockRejectedValueOnce(new Error('temporary one'))
       .mockRejectedValueOnce(new Error('temporary two'))
       .mockResolvedValue('ok')
 
-    const result = harness.readWithRetry(operation, retryPolicy, client, undefined, null, 'Leitura')
+    const result = engine.retryingRead(
+      operation,
+      retryPolicy,
+      'Leitura',
+      new AbortController().signal,
+    )
     await vi.runAllTimersAsync()
 
     await expect(result).resolves.toBe('ok')
@@ -87,13 +91,15 @@ describe('WhatsAppService pacing', () => {
 
   it('returns the final read error after exhausting both retries', async () => {
     vi.useFakeTimers()
-    const service = createService()
-    const harness = service as unknown as ServiceHarness
-    const client = {}
-    harness.client = client
+    const engine = engineHarness(createService())
     const operation = vi.fn<() => Promise<string>>().mockRejectedValue(new Error('still failing'))
 
-    const result = harness.readWithRetry(operation, retryPolicy, client, undefined, null, 'Leitura')
+    const result = engine.retryingRead(
+      operation,
+      retryPolicy,
+      'Leitura',
+      new AbortController().signal,
+    )
     await Promise.all([
       expect(result).rejects.toThrow('still failing'),
       vi.advanceTimersByTimeAsync(6_000),
@@ -102,23 +108,14 @@ describe('WhatsAppService pacing', () => {
     expect(operation).toHaveBeenCalledTimes(3)
   })
 
-  it('stops pending retries when the client operation is aborted', async () => {
+  it('stops pending refresh retries when the client is aborted', async () => {
     vi.useFakeTimers()
     const service = createService()
     const harness = service as unknown as ServiceHarness
-    const client = {}
     const abortController = new AbortController()
-    harness.client = client
     const operation = vi.fn<() => Promise<string>>().mockRejectedValue(new Error('temporary'))
 
-    const result = harness.readWithRetry(
-      operation,
-      retryPolicy,
-      client,
-      abortController.signal,
-      null,
-      'Leitura',
-    )
+    const result = harness.refreshRead(operation, retryPolicy, abortController.signal, 'Leitura')
     await Promise.all([
       expect(result).rejects.toBeInstanceOf(Error),
       vi.advanceTimersByTimeAsync(0).then(() => abortController.abort()),
@@ -130,19 +127,15 @@ describe('WhatsAppService pacing', () => {
   it('requires a new full delay after pause and resume', async () => {
     vi.useFakeTimers()
     const service = createService()
-    const harness = service as unknown as ServiceHarness
-    const client = {}
-    const control = { cancelled: false, paused: false }
-    harness.client = client
-    harness.syncControl = control
-    harness.syncProgress = { ...createIdleSyncProgress(), phase: 'running' }
+    const engine = engineHarness(service)
+    const runController = new AbortController()
+    engine.runAbort = runController
+    engine.progress.phase = 'running'
     let completed = false
 
-    const waiting = harness
-      .waitForControlledDelay(() => 1_000, client, control)
-      .then(() => {
-        completed = true
-      })
+    const waiting = engine.pacedDelay(() => 1_000, runController.signal).then(() => {
+      completed = true
+    })
     await vi.advanceTimersByTimeAsync(400)
     service.pauseSync()
     await vi.advanceTimersByTimeAsync(0)
@@ -153,6 +146,21 @@ describe('WhatsAppService pacing', () => {
     await vi.advanceTimersByTimeAsync(1)
     await waiting
     expect(completed).toBe(true)
+  })
+
+  it('cancels a paced delay as soon as the run is aborted', async () => {
+    vi.useFakeTimers()
+    const service = createService()
+    const engine = engineHarness(service)
+    const runController = new AbortController()
+    engine.runAbort = runController
+    engine.progress.phase = 'running'
+
+    const waiting = engine.pacedDelay(() => 1_000, runController.signal)
+    await vi.advanceTimersByTimeAsync(400)
+    runController.abort()
+
+    await expect(waiting).rejects.toBeInstanceOf(SyncInterruptedError)
   })
 
   it('coalesces chat refreshes and serves the cache while syncing', async () => {
@@ -175,7 +183,7 @@ describe('WhatsAppService pacing', () => {
     await Promise.all([first, second])
     expect(getContacts).toHaveBeenCalledTimes(1)
 
-    harness.syncPromise = new Promise<void>(() => undefined)
+    engineHarness(service).runAbort = new AbortController()
     await service.getChats(true)
     expect(getChats).toHaveBeenCalledTimes(1)
   })
