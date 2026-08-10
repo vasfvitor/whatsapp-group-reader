@@ -12,7 +12,7 @@ export function createDiagnosticRouter({ database, whatsappService }: AppDepende
   })
   router.get('/debug-log/export', (_request, response) => {
     response.attachment(`diagnostic-log-${exportTimestamp()}.jsonl`)
-    response.type('application/x-ndjson').send(toJsonl(database.listOperationalLogs()))
+    response.type('application/x-ndjson').send(toJsonl(database.logs.list()))
   })
   return router
 }

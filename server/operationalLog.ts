@@ -4,7 +4,7 @@ import type {
   OperationalLogLevel,
   OperationalLogResponse,
 } from '../shared/contracts.js'
-import type { MessageDatabase } from './database.js'
+import type { OperationalLogRepository } from './diagnostics/operationalLogRepository.js'
 
 const SENSITIVE_DETAIL_KEYS = /(body|content|media|message|text)/i
 const LOG_RETENTION_INTERVAL_MS = 60 * 60 * 1000
@@ -12,15 +12,12 @@ const LOG_RETENTION_INTERVAL_MS = 60 * 60 * 1000
 export class OperationalLogBuffer {
   private cleanupTimer: NodeJS.Timeout | null = null
 
-  constructor(private readonly database: MessageDatabase) {}
+  constructor(private readonly logs: OperationalLogRepository) {}
 
   start(): void {
     if (this.cleanupTimer) return
-    this.database.pruneOperationalLogs()
-    this.cleanupTimer = setInterval(
-      () => this.database.pruneOperationalLogs(),
-      LOG_RETENTION_INTERVAL_MS,
-    )
+    this.logs.prune()
+    this.cleanupTimer = setInterval(() => this.logs.prune(), LOG_RETENTION_INTERVAL_MS)
     this.cleanupTimer.unref()
   }
 
@@ -33,7 +30,7 @@ export class OperationalLogBuffer {
     const safeDetails = Object.fromEntries(
       Object.entries(details).filter(([key]) => !SENSITIVE_DETAIL_KEYS.test(key)),
     )
-    return this.database.appendOperationalLog({
+    return this.logs.append({
       timestamp: new Date().toISOString(),
       level,
       event,
@@ -43,7 +40,7 @@ export class OperationalLogBuffer {
   }
 
   read(after = 0): OperationalLogResponse {
-    return this.database.readOperationalLogs(after)
+    return this.logs.read(after)
   }
 
   close(): void {

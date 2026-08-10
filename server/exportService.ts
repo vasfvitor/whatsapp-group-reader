@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import open from 'open'
 import writeFileAtomic from 'write-file-atomic'
 import type { ExportRequest, ExportResult } from '../shared/contracts.js'
-import type { MessageDatabase } from './database.js'
+import type { MessageRepository } from './messages/messageRepository.js'
 
 /** Filesystem-safe timestamp used in export file names. */
 export function exportTimestamp(): string {
@@ -17,13 +17,13 @@ export function toJsonl(records: unknown[]): string {
 
 export class ExportService {
   constructor(
-    private readonly database: MessageDatabase,
+    private readonly messages: MessageRepository,
     private readonly exportsDirectory: string,
     private readonly dataDirectory: string,
   ) {}
 
   async create(request: ExportRequest, authorizedChatIds: string[]): Promise<ExportResult> {
-    const records = this.database.queryMessages({
+    const records = this.messages.query({
       fromUnix: Math.floor(Date.parse(request.from) / 1000),
       toUnix: Math.floor(Date.parse(request.to) / 1000),
       limitPerChat: request.limitPerChat,

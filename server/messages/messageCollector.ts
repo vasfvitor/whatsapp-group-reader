@@ -1,6 +1,6 @@
 import type WAWebJSTypes from 'whatsapp-web.js'
 import type { MessageRecord } from '../../shared/contracts.js'
-import type { MessageDatabase } from '../database.js'
+import type { MessageRepository } from './messageRepository.js'
 import { normalizeMessage } from '../messageNormalizer.js'
 import { chatDisplayName, chatType, type WhatsAppChat } from '../chats/chatCatalog.js'
 
@@ -12,8 +12,8 @@ export class MessageCollector {
   private readonly authors = new Map<string, string>()
   private total: number
 
-  constructor(private readonly database: MessageDatabase) {
-    this.total = database.countMessages()
+  constructor(private readonly messages: MessageRepository) {
+    this.total = messages.count()
   }
   get count(): number {
     return this.total
@@ -41,7 +41,7 @@ export class MessageCollector {
       timestamp: normalized.timestamp,
       text: normalized.text,
     }
-    if (!this.database.saveMessage(record, normalized.timestampUnix)) return 'duplicate'
+    if (!this.messages.save(record, normalized.timestampUnix)) return 'duplicate'
     this.total += 1
     return 'inserted'
   }

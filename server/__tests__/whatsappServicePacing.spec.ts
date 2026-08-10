@@ -45,10 +45,13 @@ const retryPolicy: BackoffPolicy = {
 function createService(): WhatsAppService {
   const configStore = { get: () => createDefaultConfig() }
   const database = {
-    countMessages: () => 0,
-    pruneOperationalLogs: () => undefined,
-    appendOperationalLog: (entry: object) => ({ sequence: 1, ...entry }),
-    readOperationalLogs: () => ({ entries: [], cursor: 0 }),
+    messages: { count: () => 0 },
+    syncStates: {},
+    logs: {
+      append: (entry: object) => ({ sequence: 1, ...entry }),
+      read: () => ({ entries: [], cursor: 0 }),
+      prune: () => undefined,
+    },
   }
   return new WhatsAppService(
     configStore as never,

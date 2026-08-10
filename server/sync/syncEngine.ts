@@ -5,7 +5,8 @@ import {
   type SyncTrigger,
 } from '../../shared/contracts.js'
 import type { ConfigStore } from '../configStore.js'
-import type { MessageDatabase } from '../database.js'
+import type { MessageRepository } from '../messages/messageRepository.js'
+import type { SyncStateRepository } from './syncStateRepository.js'
 import {
   evaluateHistoryPage,
   LOAD_PROFILES,
@@ -44,7 +45,8 @@ export type SyncOutcome =
 
 export interface SyncEngineDependencies {
   configStore: Pick<ConfigStore, 'get'>
-  database: MessageDatabase
+  messages: MessageRepository
+  syncStates: SyncStateRepository
   chatCatalog: ChatCatalog
   messageCollector: MessageCollector
   operationalLog: OperationalLogBuffer
@@ -87,7 +89,8 @@ export class SyncEngine {
   private pauseInterrupt = new AbortController()
 
   private readonly configStore: Pick<ConfigStore, 'get'>
-  private readonly database: MessageDatabase
+  private readonly messages: MessageRepository
+  private readonly syncStates: SyncStateRepository
   private readonly chatCatalog: ChatCatalog
   private readonly messageCollector: MessageCollector
   private readonly operationalLog: OperationalLogBuffer
@@ -97,7 +100,8 @@ export class SyncEngine {
 
   constructor(dependencies: SyncEngineDependencies) {
     this.configStore = dependencies.configStore
-    this.database = dependencies.database
+    this.messages = dependencies.messages
+    this.syncStates = dependencies.syncStates
     this.chatCatalog = dependencies.chatCatalog
     this.messageCollector = dependencies.messageCollector
     this.operationalLog = dependencies.operationalLog
@@ -209,7 +213,7 @@ export class SyncEngine {
         continue
       }
 
-      const priorState = this.database.getChatSyncState(chatId)
+      const priorState = this.syncStates.get(chatId)
       const inCooldown =
         priorState !== null &&
         Date.now() - Date.parse(priorState.lastAttemptAt) < profile.automaticCooldownMs
@@ -246,12 +250,12 @@ export class SyncEngine {
 
       this.notify(`Aguardando para consultar ${this.progress.currentChatName}…`)
       await this.waitForPacing(profile.betweenChatsMs, signal)
-      this.database.markChatSyncAttempt(chatId, new Date().toISOString())
+      this.syncStates.markAttempt(chatId, new Date().toISOString())
 
       try {
         this.notify(`Consultando ${this.progress.currentChatName}…`)
         await this.syncChat(chat, cutoff, config.sync.maxMessagesPerChat, profile, client, signal)
-        this.database.markChatSyncCompleted(chatId, new Date().toISOString())
+        this.syncStates.markCompleted(chatId, new Date().toISOString())
         this.progress.completedChats += 1
         chatsInBatch += 1
         this.operationalLog.add('info', 'chat_completed', 'Conversa processada.', {
@@ -263,11 +267,11 @@ export class SyncEngine {
         })
       } catch (error) {
         if (error instanceof SyncInterruptedError) {
-          this.database.markChatSyncCancelled(chatId)
+          this.syncStates.markCancelled(chatId)
           throw error
         }
         const failure = error instanceof Error ? error.message : String(error)
-        this.database.markChatSyncFailed(chatId, failure)
+        this.syncStates.markFailed(chatId, failure)
         this.progress.failedChats += 1
         chatsInBatch += 1
         this.warn(`${chatDisplayName(chat)}: ${failure}`)
@@ -300,7 +304,7 @@ export class SyncEngine {
     client: WhatsAppClient,
     signal: AbortSignal,
   ): Promise<void> {
-    const checkpoint = this.database.getCheckpoint(chat.id._serialized)
+    const checkpoint = this.messages.getCheckpoint(chat.id._serialized)
     const seenMessageIds = new Set<string>()
     let target = Math.min(HISTORY_CHUNK_SIZE, maximum)
 

@@ -11,7 +11,7 @@ export function createMessageRouter({ configStore, database }: AppDependencies):
       response.status(403).json({ error: 'Conversa não autorizada para visualização.' })
       return
     }
-    response.json({ messages: database.previewMessages(chatId) })
+    response.json({ messages: database.messages.preview(chatId) })
   })
   return router
 }

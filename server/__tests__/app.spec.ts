@@ -38,17 +38,21 @@ function createHarness() {
     }),
   }
   const database = {
-    listOperationalLogs: vi.fn<() => OperationalLogEntry[]>(() => [
-      {
-        sequence: 1,
-        timestamp: '2026-07-13T12:00:00.000Z',
-        level: 'info',
-        event: 'started',
-        message: 'Iniciado',
-        details: {},
-      },
-    ]),
-    previewMessages: vi.fn<() => MessageRecord[]>(() => []),
+    logs: {
+      list: vi.fn<() => OperationalLogEntry[]>(() => [
+        {
+          sequence: 1,
+          timestamp: '2026-07-13T12:00:00.000Z',
+          level: 'info',
+          event: 'started',
+          message: 'Iniciado',
+          details: {},
+        },
+      ]),
+    },
+    messages: {
+      preview: vi.fn<() => MessageRecord[]>(() => []),
+    },
   }
   const whatsappService = {
     getStatus: vi.fn<() => AppStatus>(() => status),
@@ -105,7 +109,7 @@ describe('HTTP API contracts', () => {
       .get('/api/messages/preview')
       .query({ chatId: 'allowed@g.us' })
       .expect(200, { messages: [] })
-    expect(database.previewMessages).toHaveBeenCalledWith('allowed@g.us')
+    expect(database.messages.preview).toHaveBeenCalledWith('allowed@g.us')
   })
 
   it('exports scoped to the configured allowlist', async () => {

@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import open from 'open'
 import { ConfigStore } from './configStore.js'
-import { MessageDatabase } from './database.js'
+import { AppDatabase } from './database.js'
 import { ExportService } from './exportService.js'
 import { WhatsAppService } from './whatsappService.js'
 import { appPaths } from './paths.js'
@@ -21,9 +21,9 @@ async function main(): Promise<void> {
   const configStore = new ConfigStore(appPaths.config)
   await configStore.load()
 
-  const database = new MessageDatabase(appPaths.database)
+  const database = new AppDatabase(appPaths.database)
   const whatsappService = new WhatsAppService(configStore, database, appPaths.auth, appPaths.data)
-  const exportService = new ExportService(database, appPaths.exports, appPaths.data)
+  const exportService = new ExportService(database.messages, appPaths.exports, appPaths.data)
   const app = createApp({ configStore, database, exportService, whatsappService, development })
 
   const server = app.listen(PORT, HOST, () => {

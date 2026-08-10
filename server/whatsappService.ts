@@ -5,7 +5,7 @@ import type WAWebJSTypes from 'whatsapp-web.js'
 import type { AppStatus, ChatSummary, ConnectionState } from '../shared/contracts.js'
 import { isChatAuthorized } from '../shared/configRules.js'
 import type { ConfigStore } from './configStore.js'
-import type { MessageDatabase } from './database.js'
+import type { AppDatabase } from './database.js'
 import {
   cryptoRandomSource,
   LOAD_PROFILES,
@@ -50,16 +50,17 @@ export class WhatsAppService {
 
   constructor(
     private readonly configStore: ConfigStore,
-    private readonly database: MessageDatabase,
+    database: AppDatabase,
     private readonly authDirectory: string,
     private readonly dataDirectory: string,
     private readonly random: RandomSource = cryptoRandomSource,
   ) {
-    this.messageCollector = new MessageCollector(database)
-    this.operationalLog = new OperationalLogBuffer(database)
+    this.messageCollector = new MessageCollector(database.messages)
+    this.operationalLog = new OperationalLogBuffer(database.logs)
     this.syncEngine = new SyncEngine({
       configStore,
-      database,
+      messages: database.messages,
+      syncStates: database.syncStates,
       chatCatalog: this.chatCatalog,
       messageCollector: this.messageCollector,
       operationalLog: this.operationalLog,
