@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { shallowRef, watch } from 'vue'
-import type { ChatSummary, MessageRecord } from '@shared/contracts'
+import { MESSAGE_PREVIEW_LIMIT, type ChatSummary, type MessageRecord } from '@shared/contracts'
 
 const props = defineProps<{
   chats: ChatSummary[]
@@ -39,11 +39,13 @@ function load(): void {
   emit('load', selectedChatId.value)
 }
 
+const timestampFormatter = new Intl.DateTimeFormat('pt-BR', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+})
+
 function formatTimestamp(timestamp: string): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(new Date(timestamp))
+  return timestampFormatter.format(new Date(timestamp))
 }
 </script>
 
@@ -51,7 +53,7 @@ function formatTimestamp(timestamp: string): string {
   <details class="panel preview-panel">
     <summary>
       <span>Conferir mensagens coletadas</span>
-      <small>Amostra local de até 20 mensagens</small>
+      <small>Amostra local de até {{ MESSAGE_PREVIEW_LIMIT }} mensagens</small>
     </summary>
 
     <p class="preview-note">

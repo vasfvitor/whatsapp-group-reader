@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import type { ChatType, MessageRecord } from '../../shared/contracts.js'
+import { MESSAGE_PREVIEW_LIMIT, type ChatType, type MessageRecord } from '../../shared/contracts.js'
 
 interface MessageRow {
   message_id: string
@@ -36,6 +36,9 @@ function toRecord(row: MessageRow): MessageRecord {
 
 export class MessageRepository {
   private readonly saveTransaction: (record: MessageRecord, timestampUnix: number) => boolean
+  private readonly checkpointStatement: Database.Statement
+  private readonly countStatement: Database.Statement
+  private readonly previewStatement: Database.Statement
 
   constructor(private readonly database: Database.Database) {
     const insert = database.prepare(`INSERT OR IGNORE INTO messages (
@@ -51,17 +54,21 @@ export class MessageRepository {
       checkpoint.run(record.chatId, timestampUnix, record.messageId)
       return result.changes === 1
     })
+    this.checkpointStatement = database.prepare(
+      `SELECT chat_id, last_timestamp_unix, last_message_id FROM checkpoints WHERE chat_id = ?`,
+    )
+    this.countStatement = database.prepare('SELECT COUNT(*) AS count FROM messages')
+    this.previewStatement = database.prepare(
+      `SELECT message_id, chat_id, chat_name, chat_type, author, timestamp_utc, text
+      FROM messages WHERE chat_id = ? ORDER BY timestamp_unix DESC, message_id DESC LIMIT ?`,
+    )
   }
 
   save(record: MessageRecord, timestampUnix: number): boolean {
     return this.saveTransaction(record, timestampUnix)
   }
   getCheckpoint(chatId: string): Checkpoint | null {
-    const row = this.database
-      .prepare(
-        `SELECT chat_id, last_timestamp_unix, last_message_id FROM checkpoints WHERE chat_id = ?`,
-      )
-      .get(chatId) as
+    const row = this.checkpointStatement.get(chatId) as
       | { chat_id: string; last_timestamp_unix: number; last_message_id: string }
       | undefined
     return row
@@ -73,9 +80,7 @@ export class MessageRepository {
       : null
   }
   count(): number {
-    return (
-      this.database.prepare('SELECT COUNT(*) AS count FROM messages').get() as { count: number }
-    ).count
+    return (this.countStatement.get() as { count: number }).count
   }
   query(options: MessageQuery): MessageRecord[] {
     if (options.chatIds.length === 0) return []
@@ -97,13 +102,8 @@ export class MessageRepository {
       ) as MessageRow[]
     return rows.map(toRecord)
   }
-  preview(chatId: string, limit = 20): MessageRecord[] {
-    const rows = this.database
-      .prepare(
-        `SELECT message_id, chat_id, chat_name, chat_type, author, timestamp_utc, text
-      FROM messages WHERE chat_id = ? ORDER BY timestamp_unix DESC, message_id DESC LIMIT ?`,
-      )
-      .all(chatId, limit) as MessageRow[]
+  preview(chatId: string, limit = MESSAGE_PREVIEW_LIMIT): MessageRecord[] {
+    const rows = this.previewStatement.all(chatId, limit) as MessageRow[]
     return rows.map(toRecord)
   }
 }

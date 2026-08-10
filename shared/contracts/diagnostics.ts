@@ -4,6 +4,9 @@ export const operationalLogQuerySchema = z.object({
   after: z.coerce.number().int().min(0).default(0),
 })
 
+/** Newest entries kept in view per read, shared by server page size and frontend window. */
+export const OPERATIONAL_LOG_WINDOW = 200
+
 export type OperationalLogLevel = 'info' | 'warn' | 'error'
 export type OperationalLogDetails = Record<string, string | number | boolean>
 

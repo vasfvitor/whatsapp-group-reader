@@ -5,21 +5,13 @@ import type { AppDependencies } from './dependencies.js'
 export function createReaderRouter({ whatsappService }: AppDependencies): Router {
   const router = Router()
   router.get('/status', (_request, response) => response.json(whatsappService.getStatus()))
-  router.get('/chats', async (request, response, next) => {
-    try {
-      response.json(await whatsappService.getChats(request.query.refresh === 'true'))
-    } catch (error) {
-      next(error)
-    }
+  router.get('/chats', async (request, response) => {
+    response.json(await whatsappService.getChats(request.query.refresh === 'true'))
   })
-  router.post('/sync', (request, response, next) => {
-    try {
-      const syncRequest = syncRequestSchema.parse(request.body ?? {})
-      whatsappService.syncSelected({ trigger: 'manual', forceRecent: syncRequest.forceRecent })
-      response.status(202).json(whatsappService.getStatus())
-    } catch (error) {
-      next(error)
-    }
+  router.post('/sync', (request, response) => {
+    const syncRequest = syncRequestSchema.parse(request.body ?? {})
+    whatsappService.syncSelected({ trigger: 'manual', forceRecent: syncRequest.forceRecent })
+    response.status(202).json(whatsappService.getStatus())
   })
   router.post('/sync/pause', (_request, response) => {
     whatsappService.pauseSync()
@@ -33,13 +25,9 @@ export function createReaderRouter({ whatsappService }: AppDependencies): Router
     whatsappService.cancelSync()
     response.json(whatsappService.getStatus())
   })
-  router.post('/session/reset', async (_request, response, next) => {
-    try {
-      await whatsappService.resetSession()
-      response.status(202).json(whatsappService.getStatus())
-    } catch (error) {
-      next(error)
-    }
+  router.post('/session/reset', async (_request, response) => {
+    await whatsappService.resetSession()
+    response.status(202).json(whatsappService.getStatus())
   })
   return router
 }

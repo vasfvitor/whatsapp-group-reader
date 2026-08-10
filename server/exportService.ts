@@ -6,6 +6,15 @@ import writeFileAtomic from 'write-file-atomic'
 import type { ExportRequest, ExportResult } from '../shared/contracts.js'
 import type { MessageDatabase } from './database.js'
 
+/** Filesystem-safe timestamp used in export file names. */
+export function exportTimestamp(): string {
+  return new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
+}
+
+export function toJsonl(records: unknown[]): string {
+  return records.length ? `${records.map((record) => JSON.stringify(record)).join('\n')}\n` : ''
+}
+
 export class ExportService {
   constructor(
     private readonly database: MessageDatabase,
@@ -22,13 +31,9 @@ export class ExportService {
     })
 
     await mkdir(this.exportsDirectory, { recursive: true })
-    const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
-    const fileName = `messages-${timestamp}-${randomUUID().slice(0, 8)}.jsonl`
-    const content = records.length
-      ? `${records.map((record) => JSON.stringify(record)).join('\n')}\n`
-      : ''
+    const fileName = `messages-${exportTimestamp()}-${randomUUID().slice(0, 8)}.jsonl`
 
-    await writeFileAtomic(path.join(this.exportsDirectory, fileName), content, {
+    await writeFileAtomic(path.join(this.exportsDirectory, fileName), toJsonl(records), {
       encoding: 'utf8',
     })
 

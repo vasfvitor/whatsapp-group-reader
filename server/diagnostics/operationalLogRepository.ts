@@ -1,10 +1,14 @@
 import type Database from 'better-sqlite3'
-import type {
-  OperationalLogDetails,
-  OperationalLogEntry,
-  OperationalLogLevel,
-  OperationalLogResponse,
+import {
+  OPERATIONAL_LOG_WINDOW,
+  type OperationalLogDetails,
+  type OperationalLogEntry,
+  type OperationalLogLevel,
+  type OperationalLogResponse,
 } from '../../shared/contracts.js'
+
+const MAX_ROWS = 10_000
+const RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 
 interface LogRow {
   id: number
@@ -32,60 +36,61 @@ function toEntry(row: LogRow): OperationalLogEntry {
 }
 
 export class OperationalLogRepository {
-  constructor(private readonly database: Database.Database) {}
-  append(entry: Omit<OperationalLogEntry, 'sequence'>): OperationalLogEntry {
-    const result = this.database
-      .prepare(
-        `INSERT INTO operational_logs
+  private readonly insertStatement: Database.Statement
+  private readonly cursorStatement: Database.Statement
+  private readonly pageStatement: Database.Statement
+  private readonly listStatement: Database.Statement
+  private readonly deleteExpiredStatement: Database.Statement
+  private readonly trimStatement: Database.Statement
+
+  constructor(database: Database.Database) {
+    this.insertStatement = database.prepare(
+      `INSERT INTO operational_logs
       (timestamp_utc, level, event, message, details_json) VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(entry.timestamp, entry.level, entry.event, entry.message, JSON.stringify(entry.details))
-    const saved = { sequence: Number(result.lastInsertRowid), ...entry }
-    this.pruneToCapacity()
-    return saved
-  }
-  read(after = 0, limit = 200): OperationalLogResponse {
-    const cursor = (
-      this.database
-        .prepare('SELECT COALESCE(MAX(id), 0) AS cursor FROM operational_logs')
-        .get() as { cursor: number }
-    ).cursor
-    const effectiveAfter = after > cursor ? 0 : after
-    const rows = this.database
-      .prepare(
-        `SELECT id, timestamp_utc, level, event, message, details_json
+    )
+    this.cursorStatement = database.prepare(
+      'SELECT COALESCE(MAX(id), 0) AS cursor FROM operational_logs',
+    )
+    this.pageStatement = database.prepare(
+      `SELECT id, timestamp_utc, level, event, message, details_json
       FROM operational_logs WHERE id > ? ORDER BY id DESC LIMIT ?`,
-      )
-      .all(effectiveAfter, limit) as LogRow[]
+    )
+    this.listStatement = database.prepare(
+      `SELECT id, timestamp_utc, level, event, message, details_json
+      FROM operational_logs ORDER BY id ASC`,
+    )
+    this.deleteExpiredStatement = database.prepare(
+      'DELETE FROM operational_logs WHERE timestamp_utc < ?',
+    )
+    // Ids are AUTOINCREMENT (monotonic, never reused), so keeping ids above
+    // max - MAX_ROWS caps the table without counting rows.
+    this.trimStatement = database.prepare('DELETE FROM operational_logs WHERE id <= ?')
+  }
+  append(entry: Omit<OperationalLogEntry, 'sequence'>): OperationalLogEntry {
+    const result = this.insertStatement.run(
+      entry.timestamp,
+      entry.level,
+      entry.event,
+      entry.message,
+      JSON.stringify(entry.details),
+    )
+    const sequence = Number(result.lastInsertRowid)
+    this.trimStatement.run(sequence - MAX_ROWS)
+    return { sequence, ...entry }
+  }
+  read(after = 0, limit = OPERATIONAL_LOG_WINDOW): OperationalLogResponse {
+    const cursor = (this.cursorStatement.get() as { cursor: number }).cursor
+    const effectiveAfter = after > cursor ? 0 : after
+    const rows = this.pageStatement.all(effectiveAfter, limit) as LogRow[]
     return { entries: rows.reverse().map(toEntry), cursor }
   }
   list(): OperationalLogEntry[] {
-    return (
-      this.database
-        .prepare(
-          `SELECT id, timestamp_utc, level, event, message, details_json
-      FROM operational_logs ORDER BY id ASC`,
-        )
-        .all() as LogRow[]
-    ).map(toEntry)
+    return (this.listStatement.all() as LogRow[]).map(toEntry)
   }
   prune(now = new Date()): void {
-    const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    this.database.prepare('DELETE FROM operational_logs WHERE timestamp_utc < ?').run(cutoff)
-    this.pruneToCapacity()
-  }
-  private pruneToCapacity(): void {
-    const count = (
-      this.database.prepare('SELECT COUNT(*) AS count FROM operational_logs').get() as {
-        count: number
-      }
-    ).count
-    if (count > 10_000)
-      this.database
-        .prepare(
-          `DELETE FROM operational_logs WHERE id IN (
-      SELECT id FROM operational_logs ORDER BY id ASC LIMIT ?)`,
-        )
-        .run(count - 10_000)
+    const cutoff = new Date(now.getTime() - RETENTION_MS).toISOString()
+    this.deleteExpiredStatement.run(cutoff)
+    const cursor = (this.cursorStatement.get() as { cursor: number }).cursor
+    this.trimStatement.run(cursor - MAX_ROWS)
   }
 }

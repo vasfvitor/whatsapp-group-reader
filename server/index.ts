@@ -9,7 +9,6 @@ import { createApp } from './app.js'
 
 const PORT = 3210
 const HOST = '127.0.0.1'
-const LOG_RETENTION_INTERVAL_MS = 60 * 60 * 1000
 const development = process.env.APP_DEV === 'true'
 
 async function main(): Promise<void> {
@@ -23,12 +22,6 @@ async function main(): Promise<void> {
   await configStore.load()
 
   const database = new MessageDatabase(appPaths.database)
-  database.pruneOperationalLogs()
-  const logCleanupTimer = setInterval(
-    () => database.pruneOperationalLogs(),
-    LOG_RETENTION_INTERVAL_MS,
-  )
-  logCleanupTimer.unref()
   const whatsappService = new WhatsAppService(configStore, database, appPaths.auth, appPaths.data)
   const exportService = new ExportService(database, appPaths.exports, appPaths.data)
   const app = createApp({ configStore, database, exportService, whatsappService, development })
@@ -44,7 +37,6 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     if (closing) return
     closing = true
-    clearInterval(logCleanupTimer)
     await whatsappService.stop()
     database.close()
     server.close(() => process.exit(0))

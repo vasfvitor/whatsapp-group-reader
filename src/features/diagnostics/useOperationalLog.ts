@@ -1,5 +1,9 @@
 import { shallowReadonly, shallowRef } from 'vue'
-import type { OperationalLogEntry, OperationalLogResponse } from '@shared/contracts'
+import {
+  OPERATIONAL_LOG_WINDOW,
+  type OperationalLogEntry,
+  type OperationalLogResponse,
+} from '@shared/contracts'
 import { requestJson } from '@/shared/api/httpClient'
 
 export function useOperationalLog() {
@@ -14,7 +18,7 @@ export function useOperationalLog() {
       const restarted = response.cursor < cursor
       entries.value = (
         restarted ? response.entries : [...entries.value, ...response.entries]
-      ).slice(-200)
+      ).slice(-OPERATIONAL_LOG_WINDOW)
       cursor = response.cursor
     } catch {
       /* Status polling surfaces persistent server failures. */

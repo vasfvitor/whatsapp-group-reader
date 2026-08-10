@@ -9,6 +9,7 @@ import {
   type ConnectionState,
   type SyncTrigger,
 } from '../shared/contracts.js'
+import { isChatAuthorized } from '../shared/configRules.js'
 import type { ConfigStore } from './configStore.js'
 import type { MessageDatabase } from './database.js'
 import {
@@ -29,12 +30,11 @@ import { OperationalLogBuffer } from './operationalLog.js'
 import {
   ChatCatalog,
   chatDisplayName,
-  chatType,
   operationalChatName,
   type WhatsAppChat,
   type WhatsAppContact,
 } from './chats/chatCatalog.js'
-import { MessageCollector, type PersistOutcome } from './messages/messageCollector.js'
+import { MessageCollector } from './messages/messageCollector.js'
 
 const { Client, LocalAuth } = WhatsAppWeb
 
@@ -86,7 +86,7 @@ export class WhatsAppService {
     private readonly random: RandomSource = cryptoRandomSource,
   ) {
     this.messageCollector = new MessageCollector(database)
-    this.operationalLog = new OperationalLogBuffer(200, database)
+    this.operationalLog = new OperationalLogBuffer(database)
   }
 
   start(): void {
@@ -514,7 +514,7 @@ export class WhatsAppService {
         this.syncProgress.currentFetchedMessages += 1
         this.syncProgress.totalFetchedMessages += 1
         if (item.timestamp < cutoff) continue
-        const outcome = await this.persistMessage(item, chat)
+        const outcome = await this.messageCollector.persist(item, chat, this.client)
         if (outcome === 'ignored') continue
         pageEligible += 1
         this.syncProgress.currentEligibleMessages += 1
@@ -736,23 +736,15 @@ export class WhatsAppService {
 
   private async handleRealtimeMessage(message: WhatsAppMessage): Promise<void> {
     const chatId = message.fromMe ? message.to : message.from
-    if (!this.configStore.get().selectedChatIds.includes(chatId)) return
+    if (!isChatAuthorized(this.configStore.get(), chatId)) return
 
     let chat = this.chatCatalog.get(chatId)
     if (!chat) {
       chat = await message.getChat()
-      if (!chatType(chat)) return
-      this.chatCatalog.set(chat)
+      if (!this.chatCatalog.set(chat)) return
     }
 
-    await this.persistMessage(message, chat)
-  }
-
-  private async persistMessage(
-    message: WhatsAppMessage,
-    chat: WhatsAppChat,
-  ): Promise<PersistOutcome> {
-    return this.messageCollector.persist(message, chat, this.client)
+    await this.messageCollector.persist(message, chat, this.client)
   }
 
   private scheduleReconnect(): void {

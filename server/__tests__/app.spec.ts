@@ -105,7 +105,7 @@ describe('HTTP API contracts', () => {
       .get('/api/messages/preview')
       .query({ chatId: 'allowed@g.us' })
       .expect(200, { messages: [] })
-    expect(database.previewMessages).toHaveBeenCalledWith('allowed@g.us', 20)
+    expect(database.previewMessages).toHaveBeenCalledWith('allowed@g.us')
   })
 
   it('exports scoped to the configured allowlist', async () => {

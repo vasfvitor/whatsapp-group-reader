@@ -10,20 +10,15 @@ const SENSITIVE_DETAIL_KEYS = /(body|content|media|message|text)/i
 const LOG_RETENTION_INTERVAL_MS = 60 * 60 * 1000
 
 export class OperationalLogBuffer {
-  private entries: OperationalLogEntry[] = []
-  private nextSequence = 1
   private cleanupTimer: NodeJS.Timeout | null = null
 
-  constructor(
-    private readonly capacity = 200,
-    private readonly database?: MessageDatabase,
-  ) {}
+  constructor(private readonly database: MessageDatabase) {}
 
   start(): void {
-    if (!this.database || this.cleanupTimer) return
+    if (this.cleanupTimer) return
     this.database.pruneOperationalLogs()
     this.cleanupTimer = setInterval(
-      () => this.database?.pruneOperationalLogs(),
+      () => this.database.pruneOperationalLogs(),
       LOG_RETENTION_INTERVAL_MS,
     )
     this.cleanupTimer.unref()
@@ -38,31 +33,17 @@ export class OperationalLogBuffer {
     const safeDetails = Object.fromEntries(
       Object.entries(details).filter(([key]) => !SENSITIVE_DETAIL_KEYS.test(key)),
     )
-    const pendingEntry = {
+    return this.database.appendOperationalLog({
       timestamp: new Date().toISOString(),
       level,
       event,
       message,
       details: safeDetails,
-    }
-    if (this.database) return this.database.appendOperationalLog(pendingEntry)
-
-    const entry: OperationalLogEntry = { sequence: this.nextSequence, ...pendingEntry }
-    this.nextSequence += 1
-    this.entries.push(entry)
-    if (this.entries.length > this.capacity) this.entries.shift()
-    return entry
+    })
   }
 
   read(after = 0): OperationalLogResponse {
-    if (this.database) return this.database.readOperationalLogs(after, this.capacity)
-
-    const cursor = this.entries[this.entries.length - 1]?.sequence ?? 0
-    const effectiveAfter = after > cursor ? 0 : after
-    return {
-      entries: this.entries.filter((entry) => entry.sequence > effectiveAfter),
-      cursor,
-    }
+    return this.database.readOperationalLogs(after)
   }
 
   close(): void {

@@ -1,6 +1,7 @@
 import { computed, shallowReadonly, shallowRef, type ShallowRef } from 'vue'
 import type { AppConfig, ChatSummary, Source, SyncSettings } from '@shared/contracts'
 import { matchingChatIds } from '@shared/sourceMatcher'
+import { isChatAuthorized } from '@shared/configRules'
 import { requestJson } from '@/shared/api/httpClient'
 import type { RunOperation } from '@/app/applicationTypes'
 
@@ -8,7 +9,7 @@ export function useChatSelection(config: ShallowRef<AppConfig>, run: RunOperatio
   const chats = shallowRef<ChatSummary[]>([])
   const refreshing = shallowRef(false)
   const selectedChats = computed(() =>
-    chats.value.filter((chat) => config.value.selectedChatIds.includes(chat.id)),
+    chats.value.filter((chat) => isChatAuthorized(config.value, chat.id)),
   )
   async function refreshChats(force = false): Promise<void> {
     if (refreshing.value) return

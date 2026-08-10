@@ -4,12 +4,15 @@ import type {
   OperationalLogResponse,
 } from '../shared/contracts.js'
 import { SqliteDatabase } from './infrastructure/sqlite/sqliteDatabase.js'
-import { MessageRepository, type Checkpoint } from './messages/messageRepository.js'
+import {
+  MessageRepository,
+  type Checkpoint,
+  type MessageQuery,
+} from './messages/messageRepository.js'
 import { SyncStateRepository, type ChatSyncState } from './sync/syncStateRepository.js'
 import { OperationalLogRepository } from './diagnostics/operationalLogRepository.js'
 
 export type { Checkpoint, ChatSyncState }
-export type ChatSyncStatus = ChatSyncState['lastStatus']
 
 /** Compatibility facade while callers migrate to domain repositories. */
 export class MessageDatabase {
@@ -34,10 +37,10 @@ export class MessageDatabase {
   countMessages(): number {
     return this.messages.count()
   }
-  queryMessages(options: Parameters<MessageRepository['query']>[0]): MessageRecord[] {
+  queryMessages(options: MessageQuery): MessageRecord[] {
     return this.messages.query(options)
   }
-  previewMessages(chatId: string, limit = 20): MessageRecord[] {
+  previewMessages(chatId: string, limit?: number): MessageRecord[] {
     return this.messages.preview(chatId, limit)
   }
   getChatSyncState(chatId: string): ChatSyncState | null {
@@ -58,7 +61,7 @@ export class MessageDatabase {
   appendOperationalLog(entry: Omit<OperationalLogEntry, 'sequence'>): OperationalLogEntry {
     return this.logs.append(entry)
   }
-  readOperationalLogs(after = 0, limit = 200): OperationalLogResponse {
+  readOperationalLogs(after = 0, limit?: number): OperationalLogResponse {
     return this.logs.read(after, limit)
   }
   listOperationalLogs(): OperationalLogEntry[] {

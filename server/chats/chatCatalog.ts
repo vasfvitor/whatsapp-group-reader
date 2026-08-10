@@ -37,8 +37,11 @@ export class ChatCatalog {
   get(chatId: string): WhatsAppChat | undefined {
     return this.chats.get(chatId)
   }
-  set(chat: WhatsAppChat): void {
-    if (chatType(chat)) this.chats.set(chat.id._serialized, chat)
+  /** Returns whether the chat is a supported type and was cached. */
+  set(chat: WhatsAppChat): boolean {
+    if (!chatType(chat)) return false
+    this.chats.set(chat.id._serialized, chat)
+    return true
   }
   replace(chats: WhatsAppChat[], contacts: WhatsAppContact[]): void {
     this.chats.clear()
@@ -50,13 +53,10 @@ export class ChatCatalog {
     return [...this.chats.values()]
       .map((chat) => this.toSummary(chat, selectedChatIds, chatTags))
       .filter((chat): chat is ChatSummary => chat !== null)
-      .sort((left, right) =>
-        left.type !== right.type
-          ? left.type === 'group'
-            ? -1
-            : 1
-          : left.name.localeCompare(right.name, 'pt-BR', { sensitivity: 'base' }),
-      )
+      .sort((left, right) => {
+        if (left.type !== right.type) return left.type === 'group' ? -1 : 1
+        return left.name.localeCompare(right.name, 'pt-BR', { sensitivity: 'base' })
+      })
   }
   private toSummary(
     chat: WhatsAppChat,
