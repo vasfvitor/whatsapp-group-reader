@@ -34,19 +34,27 @@ export function toLlmText(records: MessageRecord[]): string {
     else byChat.set(record.chatId, [record])
   }
 
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const offsetMinutes = -new Date().getTimezoneOffset()
+  const offsetSign = offsetMinutes < 0 ? '-' : '+'
+  const pad = (value: number) => String(Math.abs(value)).padStart(2, '0')
+  const utcOffset = `UTC${offsetSign}${pad(Math.trunc(offsetMinutes / 60))}:${pad(offsetMinutes % 60)}`
+
   const lines: string[] = [
     `Conversas: ${byChat.size}. Mensagens: ${records.length}.`,
+    `Datas no formato AAAA-MM-DD HH:mm, fuso horário ${timeZone} (${utcOffset}).`,
     'Cada conversa está delimitada por marcadores de INÍCIO/FIM.',
   ]
 
   for (const chatRecords of byChat.values()) {
     const first = chatRecords[0]!
     const kind = first.chatType === 'group' ? 'GRUPO' : 'CONVERSA'
-    lines.push('', `===== INÍCIO ${kind}: ${first.chatName} =====`)
+    const marker = `${kind}: ${first.chatName} [id: ${first.chatId}]`
+    lines.push('', `===== INÍCIO ${marker} =====`)
     for (const record of chatRecords) {
       lines.push(`[${formatLocalTimestamp(record.timestamp)}] ${record.author}: ${record.text}`)
     }
-    lines.push(`===== FIM ${kind}: ${first.chatName} =====`)
+    lines.push(`===== FIM ${marker} =====`)
   }
 
   return `${lines.join('\n')}\n`

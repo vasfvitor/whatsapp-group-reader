@@ -244,11 +244,10 @@ export class WhatsAppService {
       this.state = 'ready'
       this.message = 'WhatsApp conectado.'
       this.reconnectAttempt = 0
-      void this.refreshChats()
-        .then(() => this.syncSelected({ trigger: 'automatic', forceRecent: false }))
-        .catch((error: unknown) => {
-          if (!(error instanceof SyncInterruptedError)) this.recordRecoverableError(error)
-        })
+      // Só atualiza a lista de conversas — a coleta é sempre iniciada pelo usuário.
+      void this.refreshChats().catch((error: unknown) => {
+        if (!(error instanceof SyncInterruptedError)) this.recordRecoverableError(error)
+      })
     })
 
     client.on('auth_failure', (reason: string) => {

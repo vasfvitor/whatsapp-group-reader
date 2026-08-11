@@ -32,10 +32,11 @@ describe('toLlmText', () => {
     ])
 
     expect(text).toContain('Conversas: 2. Mensagens: 3.')
-    expect(text).toContain('===== INÍCIO GRUPO: Equipe Projeto Alfa =====')
-    expect(text).toContain('===== FIM GRUPO: Equipe Projeto Alfa =====')
-    expect(text).toContain('===== INÍCIO CONVERSA: Operadora Exemplo =====')
-    expect(text).toContain('===== FIM CONVERSA: Operadora Exemplo =====')
+    expect(text).toMatch(/Datas no formato AAAA-MM-DD HH:mm, fuso horário .+ \(UTC[+-]\d{2}:\d{2}\)\./)
+    expect(text).toContain('===== INÍCIO GRUPO: Equipe Projeto Alfa [id: dev@g.us] =====')
+    expect(text).toContain('===== FIM GRUPO: Equipe Projeto Alfa [id: dev@g.us] =====')
+    expect(text).toContain('===== INÍCIO CONVERSA: Operadora Exemplo [id: contato@c.us] =====')
+    expect(text).toContain('===== FIM CONVERSA: Operadora Exemplo [id: contato@c.us] =====')
     expect(text).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] Ana: Boa tarde$/m)
 
     const groupEnd = text.indexOf('===== FIM GRUPO')
@@ -46,7 +47,7 @@ describe('toLlmText', () => {
   it('mantém os marcadores mesmo com uma única conversa', () => {
     const text = toLlmText([record({})])
     expect(text).toContain('Conversas: 1. Mensagens: 1.')
-    expect(text).toContain('===== INÍCIO GRUPO: Equipe Projeto Alfa =====')
+    expect(text).toContain('===== INÍCIO GRUPO: Equipe Projeto Alfa [id: dev@g.us] =====')
   })
 })
 
