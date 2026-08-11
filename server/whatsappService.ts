@@ -1,4 +1,7 @@
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import QRCode from 'qrcode'
 import WhatsAppWeb from 'whatsapp-web.js'
 import type WAWebJSTypes from 'whatsapp-web.js'
@@ -26,6 +29,13 @@ import {
 } from './sync/syncEngine.js'
 
 const { Client, LocalAuth } = WhatsAppWeb
+
+// O WhatsApp Web 2.3000.1044+ (ago/2026) quebrou o getChats() do wwebjs 1.34.7
+// (erro minificado, ex.: "r"). Fixamos a última versão comprovadamente compatível;
+// o HTML correspondente é distribuído em webcache-seed/ e semeado no cache local,
+// então o pin funciona sem depender de rede. Ao atualizar o whatsapp-web.js,
+// reavaliar se o pin ainda é necessário.
+const PINNED_WEB_VERSION = '2.3000.1043179329'
 
 type WhatsAppClient = WAWebJSTypes.Client
 type WhatsAppMessage = WAWebJSTypes.Message
@@ -168,6 +178,16 @@ export class WhatsAppService {
     this.message = 'Cancelando sincronização após a operação atual…'
   }
 
+  async reconnect(): Promise<void> {
+    this.clearReconnectTimer()
+    this.pendingAutomaticSync = false
+    if (this.syncEngine.running) this.syncEngine.cancel()
+    this.reconnectAttempt = 0
+    this.operationalLog.add('info', 'manual_reconnect', 'Reconexão manual solicitada.')
+    await this.destroyClient()
+    this.createClient('reconnecting')
+  }
+
   async resetSession(): Promise<void> {
     this.clearReconnectTimer()
     await this.destroyClient()
@@ -193,10 +213,17 @@ export class WhatsAppService {
     this.message = initialState === 'reconnecting' ? 'Reconectando ao WhatsApp…' : 'Conectando…'
     this.lastError = null
 
+    // Sem um caminho absoluto, o LocalWebCache grava ./.wwebjs_cache no cwd —
+    // que no pacote distribuído é a pasta do programa, possivelmente somente leitura.
+    const webCacheDirectory = path.join(this.dataDirectory, 'web-cache')
+    this.seedWebVersionCache(webCacheDirectory)
+
     const client = new Client({
       authStrategy: new LocalAuth({ dataPath: this.authDirectory, rmMaxRetries: 4 }),
       puppeteer: { headless: true },
       qrMaxRetries: 0,
+      webVersion: PINNED_WEB_VERSION,
+      webVersionCache: { type: 'local', path: webCacheDirectory },
     })
     this.client = client
 
@@ -317,6 +344,29 @@ export class WhatsAppService {
     return this.refreshPromise
   }
 
+  /**
+   * Garante que o HTML da versão fixada exista no cache local; sem ele o
+   * wwebjs cai na versão ao vivo do WhatsApp Web (potencialmente incompatível).
+   */
+  private seedWebVersionCache(cacheDirectory: string): void {
+    const target = path.join(cacheDirectory, `${PINNED_WEB_VERSION}.html`)
+    if (existsSync(target)) return
+    // Dev: server/../webcache-seed. Produção: dist/server/server/../webcache-seed.
+    const seed = fileURLToPath(
+      new URL(`../webcache-seed/${PINNED_WEB_VERSION}.html`, import.meta.url),
+    )
+    if (!existsSync(seed)) {
+      this.operationalLog.add(
+        'warn',
+        'web_version_seed_missing',
+        `HTML da versão fixada ${PINNED_WEB_VERSION} não encontrado; usando a versão ao vivo do WhatsApp Web.`,
+      )
+      return
+    }
+    mkdirSync(cacheDirectory, { recursive: true })
+    copyFileSync(seed, target)
+  }
+
   private refreshRead<T>(
     operation: () => Promise<T>,
     policy: BackoffPolicy,
@@ -327,7 +377,7 @@ export class WhatsAppService {
       guard: () => {
         if (signal.aborted) throw new SyncInterruptedError()
       },
-      delay: (attempt) => {
+      delay: (attempt, error) => {
         const retryNumber = attempt + 1
         this.message = `${label} falhou. Nova tentativa ${retryNumber}/${policy.maxRetries} após uma pausa…`
         const delay = sampleExponentialBackoff(policy, attempt, this.random)
@@ -335,6 +385,7 @@ export class WhatsAppService {
           retry: retryNumber,
           maxRetries: policy.maxRetries,
           delayMs: delay,
+          error: this.errorMessage(error),
         })
         return abortableDelay(delay, signal)
       },

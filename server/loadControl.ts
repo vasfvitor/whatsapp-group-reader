@@ -70,7 +70,7 @@ export interface ReadRetryHooks {
   /** Throws when the read should no longer proceed (cancelled, aborted, stale client). */
   guard: () => void
   /** Waits between attempts; rejects to abort the retry loop. */
-  delay: (attempt: number) => Promise<void>
+  delay: (attempt: number, error: unknown) => Promise<void>
   /** Awaited before every attempt (e.g. while the sync is paused). */
   beforeAttempt?: () => Promise<void>
 }
@@ -88,7 +88,7 @@ export async function withReadRetry<T>(
     } catch (error) {
       hooks.guard()
       if (attempt >= policy.maxRetries) throw error
-      await hooks.delay(attempt)
+      await hooks.delay(attempt, error)
     }
   }
 }

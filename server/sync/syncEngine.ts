@@ -397,7 +397,7 @@ export class SyncEngine {
     return withReadRetry(operation, policy, {
       beforeAttempt: () => this.waitWhilePaused(signal),
       guard: () => this.throwIfInterrupted(signal),
-      delay: (attempt) => {
+      delay: (attempt, error) => {
         const retryNumber = attempt + 1
         const message = `${label} falhou. Nova tentativa ${retryNumber}/${policy.maxRetries} após uma pausa…`
         this.notify(message)
@@ -407,6 +407,7 @@ export class SyncEngine {
             retry: retryNumber,
             maxRetries: policy.maxRetries,
             delayMs: delay,
+            error: error instanceof Error ? error.message : String(error),
           })
           return delay
         }, signal)
