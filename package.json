@@ -24,7 +24,7 @@
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
-    "lint:check": "eslint .",
+    "lint:check": "oxlint . && eslint .",
     "format": "prettier --write --experimental-cli src/ server/ shared/"
   },
   "dependencies": {
