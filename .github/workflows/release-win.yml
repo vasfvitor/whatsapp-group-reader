@@ -4,64 +4,98 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      skip_smoke_test:
+        description: 'Pular o smoke test (útil se ele flakar no runner)'
+        type: boolean
+        default: false
 
-permissions:
-  contents: write
+# Nada de runs duplicados da mesma ref; tag nova cancela run antigo da mesma tag.
+concurrency:
+  group: release-win-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
 
 jobs:
   package-win:
     runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # gh release create
     env:
       COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    defaults:
+      run:
+        shell: pwsh
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # release usa GH_TOKEN via env, não o git credential
 
-      - uses: actions/setup-node@v5
+      # corepack enable antes do setup-node: o cache 'pnpm' precisa do shim no PATH
+      # para rodar `pnpm store path`.
+      - name: Habilitar corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
+          cache: pnpm
 
       # Em push de tag, a versão do package.json precisa bater com a tag —
       # o nome do zip e a release são derivados dela.
       - name: Conferir versão vs tag
         if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
         run: |
           $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tag = $env:GITHUB_REF_NAME.TrimStart('v')
           if ($pkg -ne $tag) { throw "package.json está em $pkg mas a tag é $env:GITHUB_REF_NAME" }
 
       - name: Testes
-        shell: pwsh
         run: |
           corepack pnpm install --frozen-lockfile
           corepack pnpm test
 
-      - name: Empacotar (pnpm package:win)
-        shell: pwsh
-        run: corepack pnpm package:win
+      # Mesmo comando do `pnpm package:win`, chamado direto para poder anexar
+      # -SkipSmokeTest quando pedido no dispatch manual.
+      - name: Empacotar
+        env:
+          SKIP_SMOKE_TEST: ${{ inputs.skip_smoke_test }}
+        run: |
+          $flags = @()
+          if ($env:SKIP_SMOKE_TEST -eq 'true') { $flags += '-SkipSmokeTest' }
+          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/package-win.ps1 @flags
 
-      - name: SHA-256
-        shell: pwsh
+      - name: SHA-256 e resumo
         run: |
           $zip = Get-ChildItem release/*.zip | Select-Object -First 1
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($zip.Name)" | Set-Content "$($zip.FullName).sha256" -Encoding ascii -NoNewline
-          Write-Host "SHA-256: $hash"
+          @(
+            '### Pacote Windows'
+            ''
+            "| | |"
+            "|---|---|"
+            "| Arquivo | ``$($zip.Name)`` |"
+            "| Tamanho | $('{0:N0} MB' -f ($zip.Length / 1MB)) |"
+            "| SHA-256 | ``$hash`` |"
+          ) | Add-Content $env:GITHUB_STEP_SUMMARY
 
       # Execuções manuais (workflow_dispatch) só publicam o artefato do run,
       # sem criar release.
       - name: Artefato do run
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: whatsapp-group-reader-win64
           path: |
             release/*.zip
             release/*.sha256
           if-no-files-found: error
+          retention-days: 14
 
       - name: Publicar release
         if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
