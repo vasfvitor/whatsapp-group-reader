@@ -1,0 +1,69 @@
+name: Release Windows
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package-win:
+    runs-on: windows-latest
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # Em push de tag, a versão do package.json precisa bater com a tag —
+      # o nome do zip e a release são derivados dela.
+      - name: Conferir versão vs tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = $env:GITHUB_REF_NAME.TrimStart('v')
+          if ($pkg -ne $tag) { throw "package.json está em $pkg mas a tag é $env:GITHUB_REF_NAME" }
+
+      - name: Testes
+        shell: pwsh
+        run: |
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm test
+
+      - name: Empacotar (pnpm package:win)
+        shell: pwsh
+        run: corepack pnpm package:win
+
+      - name: SHA-256
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem release/*.zip | Select-Object -First 1
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($zip.Name)" | Set-Content "$($zip.FullName).sha256" -Encoding ascii -NoNewline
+          Write-Host "SHA-256: $hash"
+
+      # Execuções manuais (workflow_dispatch) só publicam o artefato do run,
+      # sem criar release.
+      - name: Artefato do run
+        uses: actions/upload-artifact@v4
+        with:
+          name: whatsapp-group-reader-win64
+          path: |
+            release/*.zip
+            release/*.sha256
+          if-no-files-found: error
+
+      - name: Publicar release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = Get-ChildItem release/*.zip, release/*.sha256 | ForEach-Object FullName
+          gh release create $env:GITHUB_REF_NAME @files --generate-notes --verify-tag
