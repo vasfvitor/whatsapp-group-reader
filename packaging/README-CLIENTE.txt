@@ -11,7 +11,8 @@ ONDE EXTRAIR
 3. Extraia para uma pasta curta e fora do OneDrive, por exemplo:
    C:\WhatsAppReader
    Não use "Documentos", "Área de Trabalho" nem pastas sincronizadas.
-   São necessários cerca de 600 MB de espaço livre.
+   São necessários cerca de 250 MB de espaço livre.
+   O programa usa o Microsoft Edge, que já vem instalado no Windows 10/11.
 
 COMO USAR
 4. Abra a pasta e dê dois cliques em "Iniciar.cmd".

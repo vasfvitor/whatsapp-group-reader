@@ -6,11 +6,6 @@
 # NÃO adicionar: puppeteer-core/lib/* (alvos vivos de "exports") nem
 # fluent-ffmpeg (require ansioso do Util do whatsapp-web.js).
 
-# better-sqlite3: o .node compilado é autossuficiente
-app/node_modules/better-sqlite3/deps
-app/node_modules/better-sqlite3/src
-app/node_modules/better-sqlite3/build/Release/obj
-
 # Documentação e metadados sem uso em runtime
 **/*.md
 **/*.markdown

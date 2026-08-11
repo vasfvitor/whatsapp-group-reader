@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3'
+import type { DatabaseSync } from 'node:sqlite'
 import { openDatabase } from './infrastructure/sqlite/sqliteDatabase.js'
 import { MessageRepository, type Checkpoint } from './messages/messageRepository.js'
 import { SyncStateRepository, type ChatSyncState } from './sync/syncStateRepository.js'
@@ -11,7 +11,7 @@ export class AppDatabase {
   readonly messages: MessageRepository
   readonly syncStates: SyncStateRepository
   readonly logs: OperationalLogRepository
-  private readonly connection: Database.Database
+  private readonly connection: DatabaseSync
 
   constructor(filePath: string) {
     this.connection = openDatabase(filePath)

@@ -3,7 +3,6 @@ setlocal
 title WhatsApp Group Reader - feche esta janela para encerrar
 
 set "PKG=%~dp0"
-set "PUPPETEER_CACHE_DIR=%PKG%chromium"
 set "PUPPETEER_SKIP_DOWNLOAD=1"
 set "NODE_ENV=production"
 set "APP_DEV="

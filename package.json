@@ -28,7 +28,6 @@
   },
   "dependencies": {
     "@tanstack/vue-query": "^5.101.4",
-    "better-sqlite3": "^12.4.1",
     "env-paths": "^3.0.0",
     "express": "^5.1.0",
     "open": "^11.0.0",
@@ -40,7 +39,6 @@
   },
   "devDependencies": {
     "@tsconfig/node24": "^24.0.4",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.3",
     "@types/jsdom": "^28.0.3",
     "@types/node": "^24.13.2",
@@ -71,11 +69,10 @@
     "vue-tsc": "^3.3.5"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=24.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "better-sqlite3",
       "esbuild",
       "puppeteer"
     ]

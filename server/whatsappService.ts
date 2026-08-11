@@ -37,6 +37,22 @@ const { Client, LocalAuth } = WhatsAppWeb
 // reavaliar se o pin ainda é necessário.
 const PINNED_WEB_VERSION = '2.3000.1043179329'
 
+/**
+ * Usa o Microsoft Edge da máquina (presente em todo Windows 10/11) em vez de um
+ * Chromium embarcado — mantém o pacote distribuído leve. `PUPPETEER_EXECUTABLE_PATH`
+ * tem precedência (o Puppeteer lê a variável sozinho); fora do Windows ou sem Edge,
+ * cai na resolução padrão do Puppeteer.
+ */
+function resolveEdgeExecutable(): string | undefined {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) return undefined
+  const suffix = 'Microsoft\\Edge\\Application\\msedge.exe'
+  const candidates = [
+    path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', suffix),
+    path.join(process.env['ProgramFiles'] ?? 'C:\\Program Files', suffix),
+  ]
+  return candidates.find((candidate) => existsSync(candidate))
+}
+
 type WhatsAppClient = WAWebJSTypes.Client
 type WhatsAppMessage = WAWebJSTypes.Message
 
@@ -212,9 +228,18 @@ export class WhatsAppService {
     const webCacheDirectory = path.join(this.dataDirectory, 'web-cache')
     this.seedWebVersionCache(webCacheDirectory)
 
+    const edgeExecutable = resolveEdgeExecutable()
+    if (!edgeExecutable && process.platform === 'win32' && !process.env.PUPPETEER_EXECUTABLE_PATH) {
+      this.operationalLog.add(
+        'warn',
+        'edge_not_found',
+        'Microsoft Edge não encontrado; usando a resolução padrão de navegador do Puppeteer.',
+      )
+    }
+
     const client = new Client({
       authStrategy: new LocalAuth({ dataPath: this.authDirectory, rmMaxRetries: 4 }),
-      puppeteer: { headless: true },
+      puppeteer: { headless: true, ...(edgeExecutable ? { executablePath: edgeExecutable } : {}) },
       qrMaxRetries: 0,
       webVersion: PINNED_WEB_VERSION,
       webVersionCache: { type: 'local', path: webCacheDirectory },

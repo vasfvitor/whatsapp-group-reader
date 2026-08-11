@@ -1,9 +1,9 @@
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 
-export function openDatabase(filePath: string): Database.Database {
-  const connection = new Database(filePath)
-  connection.pragma('journal_mode = WAL')
-  connection.pragma('foreign_keys = ON')
+export function openDatabase(filePath: string): DatabaseSync {
+  const connection = new DatabaseSync(filePath)
+  connection.exec('PRAGMA journal_mode = WAL;')
+  connection.exec('PRAGMA foreign_keys = ON;')
   connection.exec(`
     CREATE TABLE IF NOT EXISTS messages (
       message_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, chat_name TEXT NOT NULL,

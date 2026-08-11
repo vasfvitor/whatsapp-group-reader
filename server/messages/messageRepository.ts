@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3'
+import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { MESSAGE_PREVIEW_LIMIT, type ChatType, type MessageRecord } from '../../shared/contracts.js'
 
 interface MessageRow {
@@ -36,11 +36,11 @@ function toRecord(row: MessageRow): MessageRecord {
 
 export class MessageRepository {
   private readonly saveTransaction: (record: MessageRecord, timestampUnix: number) => boolean
-  private readonly checkpointStatement: Database.Statement
-  private readonly countStatement: Database.Statement
-  private readonly previewStatement: Database.Statement
+  private readonly checkpointStatement: StatementSync
+  private readonly countStatement: StatementSync
+  private readonly previewStatement: StatementSync
 
-  constructor(private readonly database: Database.Database) {
+  constructor(private readonly database: DatabaseSync) {
     const insert = database.prepare(`INSERT OR IGNORE INTO messages (
       message_id, chat_id, chat_name, chat_type, author, timestamp_utc, timestamp_unix, text
     ) VALUES (@messageId, @chatId, @chatName, @chatType, @author, @timestamp, @timestampUnix, @text)`)
@@ -49,11 +49,19 @@ export class MessageRepository {
       VALUES (?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET
       last_timestamp_unix = excluded.last_timestamp_unix, last_message_id = excluded.last_message_id,
       updated_at = CURRENT_TIMESTAMP WHERE excluded.last_timestamp_unix >= checkpoints.last_timestamp_unix`)
-    this.saveTransaction = database.transaction((record: MessageRecord, timestampUnix: number) => {
-      const result = insert.run({ ...record, timestampUnix })
-      checkpoint.run(record.chatId, timestampUnix, record.messageId)
-      return result.changes === 1
-    })
+    // node:sqlite não tem o helper transaction() do better-sqlite3
+    this.saveTransaction = (record: MessageRecord, timestampUnix: number) => {
+      database.exec('BEGIN')
+      try {
+        const result = insert.run({ ...record, timestampUnix })
+        checkpoint.run(record.chatId, timestampUnix, record.messageId)
+        database.exec('COMMIT')
+        return result.changes === 1
+      } catch (error) {
+        database.exec('ROLLBACK')
+        throw error
+      }
+    }
     this.checkpointStatement = database.prepare(
       `SELECT chat_id, last_timestamp_unix, last_message_id FROM checkpoints WHERE chat_id = ?`,
     )
@@ -99,11 +107,11 @@ export class MessageRepository {
         options.toUnix,
         ...options.chatIds,
         options.limitPerChat,
-      ) as MessageRow[]
+      ) as unknown as MessageRow[]
     return rows.map(toRecord)
   }
   preview(chatId: string, limit = MESSAGE_PREVIEW_LIMIT): MessageRecord[] {
-    const rows = this.previewStatement.all(chatId, limit) as MessageRow[]
+    const rows = this.previewStatement.all(chatId, limit) as unknown as MessageRow[]
     return rows.map(toRecord)
   }
 }

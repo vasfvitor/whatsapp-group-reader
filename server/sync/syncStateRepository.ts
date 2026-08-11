@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3'
+import type { DatabaseSync } from 'node:sqlite'
 
 export type ChatSyncStatus = 'running' | 'completed' | 'failed' | 'cancelled'
 export interface ChatSyncState {
@@ -10,7 +10,7 @@ export interface ChatSyncState {
 }
 
 export class SyncStateRepository {
-  constructor(private readonly database: Database.Database) {}
+  constructor(private readonly database: DatabaseSync) {}
   get(chatId: string): ChatSyncState | null {
     const row = this.database
       .prepare(

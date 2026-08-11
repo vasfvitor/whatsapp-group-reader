@@ -94,12 +94,9 @@ if (Test-Path $lockSource) {
 # direto no cache do pacote.
 Step 'Dependências de produção (npm sob o runtime distribuído)'
 $nodeExe = Join-Path $staging 'runtime\node.exe'
-# O cache do Chromium fica em vendor/ (como o Node) para não rebaixar ~180 MB a cada
-# build — o postinstall do puppeteer só baixa se a revisão pedida não estiver no cache.
-# Após um bump do puppeteer, revisões antigas podem ser apagadas de vendor/chromium.
-$chromiumCache = Join-Path $vendorDir 'chromium'
-$env:PUPPETEER_CACHE_DIR = $chromiumCache
-$env:PUPPETEER_CHROME_HEADLESS_SHELL_SKIP_DOWNLOAD = 'true'
+# O app usa o Microsoft Edge da máquina do cliente — nenhum navegador é baixado
+# nem embarcado no pacote.
+$env:PUPPETEER_SKIP_DOWNLOAD = 'true'
 $npmCmd = (Test-Path (Join-Path $appDir 'package-lock.json')) ? 'ci' : 'install'
 Push-Location $appDir
 try {
@@ -117,29 +114,14 @@ if ($npmCmd -eq 'install') {
 & $nodeExe (Join-Path $repo 'scripts\patch-wwebjs.mjs') (Join-Path $appDir 'node_modules')
 if ($LASTEXITCODE -ne 0) { throw 'patch-wwebjs falhou no staging' }
 
-# Copiar apenas o Chrome (nunca o chrome-headless-shell) do cache para o pacote
-$chromeSrc = Join-Path $chromiumCache 'chrome'
-Assert-Path $chromeSrc 'Chrome baixado pelo postinstall do puppeteer'
-if (Test-Path (Join-Path $chromiumCache 'chrome-headless-shell')) {
-  Write-Warning 'chrome-headless-shell apareceu no cache (flag de skip regrediu) — não será incluído no pacote.'
-}
-New-Item -ItemType Directory -Force (Join-Path $staging 'chromium') | Out-Null
-Copy-Item $chromeSrc -Destination (Join-Path $staging 'chromium') -Recurse
-
 # ---------------------------------------------------------------- 6. verificação (falhar cedo)
 Step 'Verificação do staging'
-Assert-Path (Join-Path $appDir 'node_modules\better-sqlite3\build\Release\better_sqlite3.node') 'prebuild do better-sqlite3'
-$chrome = Get-ChildItem (Join-Path $staging 'chromium') -Recurse -Filter 'chrome.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $chrome) { throw 'FALHA: chrome.exe não encontrado no chromium do pacote' }
 $stagedPkg = Get-Content (Join-Path $appDir 'package.json') -Raw | ConvertFrom-Json
 if ($stagedPkg.type -ne 'module') { throw 'FALHA: app/package.json sem "type": "module" — o servidor ESM não carregaria' }
 
-# Sonda de ABI: instancia o better-sqlite3 com o node.exe que vai no pacote.
-Push-Location $appDir
-try {
-  & $nodeExe -e "const{createRequire}=require('node:module');const D=createRequire(process.cwd()+'/probe.cjs')('better-sqlite3');new D(':memory:').close();console.log('better-sqlite3 OK no ABI do runtime distribuido')"
-  if ($LASTEXITCODE -ne 0) { throw 'FALHA: better-sqlite3 incompatível com o node.exe distribuído (ABI)' }
-} finally { Pop-Location }
+# Sonda do node:sqlite: o runtime distribuído precisa ter o módulo nativo embutido.
+& $nodeExe -e "const{DatabaseSync}=require('node:sqlite');new DatabaseSync(':memory:').close();console.log('node:sqlite OK no runtime distribuido')"
+if ($LASTEXITCODE -ne 0) { throw 'FALHA: node:sqlite indisponível no node.exe distribuído' }
 
 $reparse = Get-ChildItem (Join-Path $appDir 'node_modules') -Recurse -Force -Attributes ReparsePoint -ErrorAction SilentlyContinue
 if ($reparse) { throw "FALHA: node_modules contém links/junctions (não sobrevivem ao zip): $($reparse[0].FullName)" }
@@ -198,14 +180,13 @@ if (-not $SkipSmokeTest) {
       }
     }
   }
-  $chromiumStaged = Join-Path $staging 'chromium'
   $oldLocal = $env:LOCALAPPDATA; $oldRoaming = $env:APPDATA; $oldPptrCache = $env:PUPPETEER_CACHE_DIR
   $proc = $null
   try {
     # env-paths deriva tudo de LOCALAPPDATA — redirecionar isola os dados do smoke test.
-    # PUPPETEER_CACHE_DIR aponta para o chromium DO PACOTE, como o Iniciar.cmd fará.
+    # Sem PUPPETEER_CACHE_DIR: o app resolve o Edge da máquina, como fará no cliente.
     $env:LOCALAPPDATA = $sandbox; $env:APPDATA = $sandbox
-    $env:PUPPETEER_CACHE_DIR = $chromiumStaged
+    $env:PUPPETEER_CACHE_DIR = $null
     Write-Host 'Iniciando o app empacotado (uma aba do navegador vai abrir — pode fechar)…'
     $proc = Start-Process $nodeExe -ArgumentList 'dist\server\server\index.js' -WorkingDirectory $appDir `
       -PassThru -NoNewWindow -RedirectStandardOutput $outLog -RedirectStandardError $errLog
@@ -231,25 +212,25 @@ if (-not $SkipSmokeTest) {
     }
     Write-Host "HTTP OK; dados isolados em $($status.dataDirectory)"
 
-    # comparação por StartsWith, não -like: colchetes no caminho quebrariam o curinga
-    $chromeProc = $null
+    # O Edge do app é identificado pelo --user-data-dir apontando para o sandbox
+    $edgeProc = $null
     foreach ($i in 1..45) {
-      $chromeProc = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
-        Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($chromiumStaged, [System.StringComparison]::OrdinalIgnoreCase) } |
+      $edgeProc = Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
+        Where-Object { $_.CommandLine -and $_.CommandLine.Contains($sandbox) } |
         Select-Object -First 1
-      if ($chromeProc) { break }
+      if ($edgeProc) { break }
       Start-Sleep 2
     }
-    if (-not $chromeProc) { Show-SmokeLogs; throw 'FALHA: nenhum chrome.exe do pacote foi iniciado em 90s (resolução do navegador errada?)' }
-    Write-Host "Chrome do pacote em execução: $($chromeProc.ExecutablePath)"
+    if (-not $edgeProc) { Show-SmokeLogs; throw 'FALHA: o app não iniciou o Microsoft Edge em 90s (Edge instalado?)' }
+    Write-Host "Edge em execução para o app (PID $($edgeProc.ProcessId))"
   } finally {
     $doomed = @()
     if ($proc -and -not $proc.HasExited) {
       $doomed += $proc
       Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
     }
-    Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
-      Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($staging, [System.StringComparison]::OrdinalIgnoreCase) } |
+    Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
+      Where-Object { $_.CommandLine -and $_.CommandLine.Contains($sandbox) } |
       ForEach-Object {
         $p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
         if ($p) { $doomed += $p; Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }

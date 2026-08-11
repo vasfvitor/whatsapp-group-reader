@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3'
+import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import {
   OPERATIONAL_LOG_WINDOW,
   type OperationalLogDetails,
@@ -36,14 +36,14 @@ function toEntry(row: LogRow): OperationalLogEntry {
 }
 
 export class OperationalLogRepository {
-  private readonly insertStatement: Database.Statement
-  private readonly cursorStatement: Database.Statement
-  private readonly pageStatement: Database.Statement
-  private readonly listStatement: Database.Statement
-  private readonly deleteExpiredStatement: Database.Statement
-  private readonly trimStatement: Database.Statement
+  private readonly insertStatement: StatementSync
+  private readonly cursorStatement: StatementSync
+  private readonly pageStatement: StatementSync
+  private readonly listStatement: StatementSync
+  private readonly deleteExpiredStatement: StatementSync
+  private readonly trimStatement: StatementSync
 
-  constructor(database: Database.Database) {
+  constructor(database: DatabaseSync) {
     this.insertStatement = database.prepare(
       `INSERT INTO operational_logs
       (timestamp_utc, level, event, message, details_json) VALUES (?, ?, ?, ?, ?)`,
@@ -81,11 +81,11 @@ export class OperationalLogRepository {
   read(after = 0, limit = OPERATIONAL_LOG_WINDOW): OperationalLogResponse {
     const cursor = (this.cursorStatement.get() as { cursor: number }).cursor
     const effectiveAfter = after > cursor ? 0 : after
-    const rows = this.pageStatement.all(effectiveAfter, limit) as LogRow[]
+    const rows = this.pageStatement.all(effectiveAfter, limit) as unknown as LogRow[]
     return { entries: rows.reverse().map(toEntry), cursor }
   }
   list(): OperationalLogEntry[] {
-    return (this.listStatement.all() as LogRow[]).map(toEntry)
+    return (this.listStatement.all() as unknown as LogRow[]).map(toEntry)
   }
   prune(now = new Date()): void {
     const cutoff = new Date(now.getTime() - RETENTION_MS).toISOString()
