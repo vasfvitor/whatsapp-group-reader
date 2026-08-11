@@ -1,0 +1,19 @@
+# Removido do pacote distribuído (staging) antes de zipar.
+# Duas formas de entrada:
+#   - Caminho literal relativo à raiz do staging (arquivo ou pasta).
+#   - Padrão recursivo "**/<filtro>" aplicado sob app/node_modules;
+#     terminar com "/" limita o filtro a diretórios.
+# NÃO adicionar: puppeteer-core/lib/* (alvos vivos de "exports") nem
+# fluent-ffmpeg (require ansioso do Util do whatsapp-web.js).
+
+# better-sqlite3: o .node compilado é autossuficiente
+app/node_modules/better-sqlite3/deps
+app/node_modules/better-sqlite3/src
+app/node_modules/better-sqlite3/build/Release/obj
+
+# Documentação e metadados sem uso em runtime
+**/*.md
+**/*.markdown
+**/.github/
+**/test/
+**/tests/

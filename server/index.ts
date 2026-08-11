@@ -26,11 +26,38 @@ async function main(): Promise<void> {
   const exportService = new ExportService(database.messages, appPaths.exports, appPaths.data)
   const app = createApp({ configStore, database, exportService, whatsappService, development })
 
+  const url = development ? 'http://127.0.0.1:5173' : `http://${HOST}:${PORT}`
+
   const server = app.listen(PORT, HOST, () => {
-    const url = development ? 'http://127.0.0.1:5173' : `http://${HOST}:${PORT}`
     console.log(`WhatsApp Group Reader disponível em ${url}`)
     setTimeout(() => void open(url), development ? 1_500 : 200)
     whatsappService.start()
+  })
+
+  const handlePortInUse = async (): Promise<void> => {
+    // Só tratar como "já em execução" se quem ocupa a porta responder como este app.
+    try {
+      const response = await fetch(`http://${HOST}:${PORT}/api/status`)
+      const status: unknown = response.ok ? await response.json() : null
+      if (status && typeof status === 'object' && 'dataDirectory' in status) {
+        console.log(`O WhatsApp Group Reader já está em execução. Abrindo ${url} no navegador…`)
+        await open(url).catch(() => undefined)
+        process.exit(0)
+      }
+    } catch {
+      // porta ocupada por outro programa
+    }
+    console.error(`A porta ${PORT} está em uso por outro programa. Feche-o e tente novamente.`)
+    process.exit(1)
+  }
+
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE' && !development) {
+      void handlePortInUse()
+      return
+    }
+    console.error(error.message)
+    process.exit(1)
   })
 
   let closing = false

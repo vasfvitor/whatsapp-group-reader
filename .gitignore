@@ -40,3 +40,8 @@ __screenshots__/
 # Vite
 *.timestamp-*-*.mjs
 /.wwebjs_cache
+
+# Empacotamento Windows (scripts/package-win.ps1)
+/build/
+/vendor/
+/release/
