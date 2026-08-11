@@ -117,12 +117,6 @@ export class WhatsAppService {
     return this.chatCatalog.list(config.selectedChatIds, config.chatTags)
   }
 
-  onConfigUpdated(): void {
-    if (this.state === 'ready' || this.state === 'syncing') {
-      this.syncSelected({ trigger: 'automatic', forceRecent: false })
-    }
-  }
-
   syncSelected(options: SyncOptions): boolean {
     if (this.syncEngine.running) {
       if (options.trigger === 'automatic') this.pendingAutomaticSync = true

@@ -58,7 +58,6 @@ function createHarness() {
     getStatus: vi.fn<() => AppStatus>(() => status),
     getOperationalLog: vi.fn<() => OperationalLogResponse>(() => ({ entries: [], cursor: 0 })),
     getChats: vi.fn<() => Promise<ChatSummary[]>>(async () => []),
-    onConfigUpdated: vi.fn<() => void>(),
     syncSelected: vi.fn<() => void>(),
     pauseSync: vi.fn<() => void>(),
     resumeSync: vi.fn<() => void>(),

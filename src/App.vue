@@ -60,7 +60,7 @@ function confirmForcedSync(): void {
       <div class="save-bar">
         <div>
           <strong>{{ reader.config.value.selectedChatIds.length }} conversas selecionadas</strong>
-          <span>Esta ação salva as escolhas e inicia a sincronização automática.</span>
+          <span>Salva as escolhas. A coleta só começa em "Sincronizar agora".</span>
         </div>
         <button
           class="button button--primary"
@@ -68,7 +68,7 @@ function confirmForcedSync(): void {
           :disabled="reader.saving.value"
           @click="reader.saveConfig"
         >
-          {{ reader.saving.value ? 'Salvando e iniciando…' : 'Salvar e iniciar sincronização' }}
+          {{ reader.saving.value ? 'Salvando…' : 'Salvar seleção' }}
         </button>
       </div>
 
