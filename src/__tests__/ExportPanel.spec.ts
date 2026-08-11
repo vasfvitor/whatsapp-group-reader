@@ -41,7 +41,13 @@ describe('ExportPanel', () => {
     expect(
       wrapper
         .findAll('button')
-        .find((button) => button.text() === 'Baixar JSONL')!
+        .find((button) => button.text() === 'Exportar para LLM')!
+        .attributes('disabled'),
+    ).toBeDefined()
+    expect(
+      wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Baixar JSONL completo')!
         .attributes('disabled'),
     ).toBeDefined()
     expect(wrapper.emitted('export')).toBeUndefined()

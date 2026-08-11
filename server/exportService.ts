@@ -3,7 +3,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import open from 'open'
 import writeFileAtomic from 'write-file-atomic'
-import type { ExportRequest, ExportResult } from '../shared/contracts.js'
+import type { ExportRequest, ExportResult, MessageRecord } from '../shared/contracts.js'
 import type { MessageRepository } from './messages/messageRepository.js'
 
 /** Filesystem-safe timestamp used in export file names. */
@@ -13,6 +13,45 @@ export function exportTimestamp(): string {
 
 export function toJsonl(records: unknown[]): string {
   return records.length ? `${records.map((record) => JSON.stringify(record)).join('\n')}\n` : ''
+}
+
+function formatLocalTimestamp(iso: string): string {
+  const date = new Date(iso)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/**
+ * Formato compacto para contexto de LLM: cabeçalho com o período exportado e
+ * cada conversa entre marcadores explícitos de início/fim, para o modelo nunca
+ * misturar a origem das mensagens.
+ */
+export function toLlmText(records: MessageRecord[], request: ExportRequest): string {
+  const byChat = new Map<string, MessageRecord[]>()
+  for (const record of records) {
+    const group = byChat.get(record.chatId)
+    if (group) group.push(record)
+    else byChat.set(record.chatId, [record])
+  }
+
+  const lines: string[] = [
+    'Mensagens exportadas do WhatsApp (somente leitura).',
+    `Período: ${formatLocalTimestamp(request.from)} a ${formatLocalTimestamp(request.to)} (horário local).`,
+    `Conversas: ${byChat.size}. Mensagens: ${records.length}.`,
+    'Cada conversa está delimitada por marcadores de INÍCIO/FIM.',
+  ]
+
+  for (const chatRecords of byChat.values()) {
+    const first = chatRecords[0]!
+    const kind = first.chatType === 'group' ? 'GRUPO' : 'CONVERSA'
+    lines.push('', `===== INÍCIO ${kind}: ${first.chatName} =====`)
+    for (const record of chatRecords) {
+      lines.push(`[${formatLocalTimestamp(record.timestamp)}] ${record.author}: ${record.text}`)
+    }
+    lines.push(`===== FIM ${kind}: ${first.chatName} =====`)
+  }
+
+  return `${lines.join('\n')}\n`
 }
 
 export class ExportService {
@@ -31,9 +70,11 @@ export class ExportService {
     })
 
     await mkdir(this.exportsDirectory, { recursive: true })
-    const fileName = `messages-${exportTimestamp()}-${randomUUID().slice(0, 8)}.jsonl`
+    const extension = request.format === 'text' ? 'txt' : 'jsonl'
+    const fileName = `messages-${exportTimestamp()}-${randomUUID().slice(0, 8)}.${extension}`
+    const content = request.format === 'text' ? toLlmText(records, request) : toJsonl(records)
 
-    await writeFileAtomic(path.join(this.exportsDirectory, fileName), toJsonl(records), {
+    await writeFileAtomic(path.join(this.exportsDirectory, fileName), content, {
       encoding: 'utf8',
     })
 
@@ -46,7 +87,7 @@ export class ExportService {
   }
 
   resolveFile(id: string): string | null {
-    if (!/^messages-[a-zA-Z0-9._-]+\.jsonl$/.test(id)) return null
+    if (!/^messages-[a-zA-Z0-9._-]+\.(jsonl|txt)$/.test(id)) return null
     return path.join(this.exportsDirectory, id)
   }
 

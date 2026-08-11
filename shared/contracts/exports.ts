@@ -8,6 +8,8 @@ export const exportRequestSchema = z
   .strictObject({
     from: z.iso.datetime({ offset: true, error: 'Informe uma data inicial válida.' }),
     to: z.iso.datetime({ offset: true, error: 'Informe uma data final válida.' }),
+    // 'jsonl': dados completos (canônico); 'text': compacto para contexto de LLM
+    format: z.enum(['jsonl', 'text']).default('jsonl'),
     limitPerChat: z
       .number({ error: limitMessage })
       .int(limitMessage)

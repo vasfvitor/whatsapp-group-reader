@@ -46,6 +46,7 @@ const validation = computed(() =>
     from: toIsoOrRaw(from.value),
     to: toIsoOrRaw(to.value),
     limitPerChat: typeof limitPerChat.value === 'number' ? limitPerChat.value : Number.NaN,
+    format: 'jsonl',
   } satisfies ExportRequest),
 )
 
@@ -59,15 +60,15 @@ const exportValidationError = computed(() => {
   return result.success ? null : (result.error.issues[0]?.message ?? null)
 })
 
-function submitExport(): void {
+function submitExport(format: ExportRequest['format']): void {
   const result = validation.value
-  if (result.success) emit('export', result.data)
+  if (result.success) emit('export', { ...result.data, format })
 }
 </script>
 
 <template>
   <section class="panel export-panel" aria-labelledby="export-title">
-    <h2 id="export-title">Sincronizar e baixar JSONL</h2>
+    <h2 id="export-title">Sincronizar e exportar</h2>
     <p class="helper-copy">
       O download contém apenas mensagens já coletadas e respeita o limite por conversa.
     </p>
@@ -114,9 +115,9 @@ function submitExport(): void {
         class="button button--primary"
         type="button"
         :disabled="exporting || Boolean(exportValidationError)"
-        @click="submitExport"
+        @click="submitExport('text')"
       >
-        {{ exporting ? 'Gerando…' : 'Baixar JSONL' }}
+        {{ exporting ? 'Gerando…' : 'Exportar para LLM' }}
       </button>
       <button class="button button--ghost" type="button" @click="$emit('openDirectory')">
         Abrir pasta de dados
@@ -130,6 +131,14 @@ function submitExport(): void {
     <p class="sync-help">
       A sincronização normal respeita o cooldown. Use a opção forçada somente quando precisar
       consultar novamente conversas recentes.
+      <button
+        class="text-button jsonl-button"
+        type="button"
+        :disabled="exporting || Boolean(exportValidationError)"
+        @click="submitExport('jsonl')"
+      >
+        Baixar JSONL completo
+      </button>
     </p>
 
     <p v-if="lastExport" class="export-result">
@@ -172,6 +181,12 @@ function submitExport(): void {
   margin: 0.65rem 0 0;
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+.jsonl-button {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-decoration: underline;
 }
 
 .data-path {
