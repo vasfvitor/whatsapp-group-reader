@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-group-reader",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Leitor local e somente leitura de mensagens autorizadas do WhatsApp.",
   "license": "MIT",
   "private": true,
