@@ -58,7 +58,7 @@ const profileDescription = computed(() =>
   <section class="panel" aria-labelledby="sync-settings-title">
     <h2 id="sync-settings-title">Quanto buscar</h2>
     <p class="helper-copy">
-      A aplicação busca até o limite por conversa e descarta mensagens anteriores à janela.
+      A aplicação busca até o limite por conversa e ignora mensagens anteriores à janela.
     </p>
 
     <div class="settings-grid">
@@ -71,7 +71,7 @@ const profileDescription = computed(() =>
         </select>
       </label>
       <label v-if="selectedRange === 'custom'" class="field">
-        <span>Quantidade de horas</span>
+        <span>Horas</span>
         <input
           type="number"
           :min="SYNC_LIMITS.minimumLookbackHours"

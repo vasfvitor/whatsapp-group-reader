@@ -43,7 +43,7 @@ describe('SyncSettingsForm', () => {
     ])
 
     await timeRange.setValue('custom')
-    expect(wrapper.text()).toContain('Quantidade de horas')
+    expect(wrapper.text()).toContain('Horas')
   })
 
   it('clamps the per-conversation limit to 1000', async () => {
