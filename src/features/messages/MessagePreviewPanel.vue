@@ -52,7 +52,7 @@ function formatTimestamp(timestamp: string): string {
 <template>
   <details class="panel preview-panel">
     <summary>
-      <span>Conferir mensagens coletadas</span>
+      <span>Conferir</span>
       <small>Amostra local de até {{ MESSAGE_PREVIEW_LIMIT }} mensagens</small>
     </summary>
 

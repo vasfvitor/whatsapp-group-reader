@@ -49,7 +49,7 @@ function selectVisible(selected: boolean): void {
   <section class="panel selector-panel" aria-labelledby="selector-title">
     <div class="panel-heading">
       <div>
-        <h2 id="selector-title">Escolha as conversas</h2>
+        <h2 id="selector-title">Conversas</h2>
         <p>Somente os itens marcados terão mensagens coletadas.</p>
       </div>
       <button

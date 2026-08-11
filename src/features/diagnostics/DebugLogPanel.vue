@@ -19,7 +19,7 @@ function formatDetails(details: OperationalLogDetails): string {
 <template>
   <details class="panel debug-panel">
     <summary>
-      <span>Detalhes técnicos para diagnóstico</span>
+      <span>Diagnóstico</span>
       <small>{{ entries.length }} eventos recentes</small>
     </summary>
 

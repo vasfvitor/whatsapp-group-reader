@@ -1,14 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import type { ExportRequest, MessageRecord } from '../../shared/contracts.js'
+import type { MessageRecord } from '../../shared/contracts.js'
 import { toJsonl, toLlmText } from '../exportService.js'
-
-const request: ExportRequest = {
-  from: '2026-08-09T20:00:00.000Z',
-  to: '2026-08-10T20:00:00.000Z',
-  limitPerChat: 500,
-  format: 'text',
-}
 
 function record(overrides: Partial<MessageRecord>): MessageRecord {
   return {
@@ -25,23 +18,19 @@ function record(overrides: Partial<MessageRecord>): MessageRecord {
 
 describe('toLlmText', () => {
   it('inclui contexto inicial e delimita cada conversa com marcadores de início/fim', () => {
-    const text = toLlmText(
-      [
-        record({}),
-        record({ messageId: 'msg-2', text: 'Atualizei o cronograma do projeto' }),
-        record({
-          chatId: 'contato@c.us',
-          chatName: 'Operadora Exemplo',
-          chatType: 'contact',
-          messageId: 'msg-3',
-          author: 'Atendimento',
-          text: 'Seu boleto foi emitido',
-        }),
-      ],
-      request,
-    )
+    const text = toLlmText([
+      record({}),
+      record({ messageId: 'msg-2', text: 'Atualizei o cronograma do projeto' }),
+      record({
+        chatId: 'contato@c.us',
+        chatName: 'Operadora Exemplo',
+        chatType: 'contact',
+        messageId: 'msg-3',
+        author: 'Atendimento',
+        text: 'Seu boleto foi emitido',
+      }),
+    ])
 
-    expect(text).toContain('Mensagens exportadas do WhatsApp')
     expect(text).toContain('Conversas: 2. Mensagens: 3.')
     expect(text).toContain('===== INÍCIO GRUPO: Equipe Projeto Alfa =====')
     expect(text).toContain('===== FIM GRUPO: Equipe Projeto Alfa =====')
@@ -55,7 +44,7 @@ describe('toLlmText', () => {
   })
 
   it('mantém os marcadores mesmo com uma única conversa', () => {
-    const text = toLlmText([record({})], request)
+    const text = toLlmText([record({})])
     expect(text).toContain('Conversas: 1. Mensagens: 1.')
     expect(text).toContain('===== INÍCIO GRUPO: Equipe Projeto Alfa =====')
   })

@@ -68,7 +68,7 @@ function submitExport(format: ExportRequest['format']): void {
 
 <template>
   <section class="panel export-panel" aria-labelledby="export-title">
-    <h2 id="export-title">Sincronizar e exportar</h2>
+    <h2 id="export-title">Exportar</h2>
     <p class="helper-copy">
       O download contém apenas mensagens já coletadas e respeita o limite por conversa.
     </p>
@@ -104,7 +104,7 @@ function submitExport(format: ExportRequest['format']): void {
         {{ syncing ? 'Sincronizando…' : 'Sincronizar agora' }}
       </button>
       <button
-        class="button button--ghost"
+        class="button button--danger"
         type="button"
         :disabled="!ready || syncing"
         @click="$emit('forceSync')"
@@ -118,9 +118,6 @@ function submitExport(format: ExportRequest['format']): void {
         @click="submitExport('text')"
       >
         {{ exporting ? 'Gerando…' : 'Exportar para LLM' }}
-      </button>
-      <button class="button button--ghost" type="button" @click="$emit('openDirectory')">
-        Abrir pasta de dados
       </button>
     </div>
 
@@ -145,7 +142,12 @@ function submitExport(format: ExportRequest['format']): void {
       {{ lastExport.count }} mensagens exportadas em <strong>{{ lastExport.fileName }}</strong
       >.
     </p>
-    <p v-if="dataDirectory" class="data-path" :title="dataDirectory">{{ dataDirectory }}</p>
+    <p class="data-path">
+      <span v-if="dataDirectory" class="path-text" :title="dataDirectory">{{ dataDirectory }}</span>
+      <button class="text-button open-directory" type="button" @click="$emit('openDirectory')">
+        Abrir pasta de dados
+      </button>
+    </p>
   </section>
 </template>
 
@@ -190,13 +192,25 @@ function submitExport(format: ExportRequest['format']): void {
 }
 
 .data-path {
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   margin: 0.75rem 0 0;
   color: var(--text-muted);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 0.75rem;
+}
+
+.path-text {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.open-directory {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  text-decoration: underline;
 }
 
 @media (max-width: 720px) {

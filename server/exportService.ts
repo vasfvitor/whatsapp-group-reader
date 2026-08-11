@@ -22,11 +22,11 @@ function formatLocalTimestamp(iso: string): string {
 }
 
 /**
- * Formato compacto para contexto de LLM: cabeçalho com o período exportado e
- * cada conversa entre marcadores explícitos de início/fim, para o modelo nunca
+ * Formato compacto para contexto de LLM: cabeçalho com as contagens e cada
+ * conversa entre marcadores explícitos de início/fim, para o modelo nunca
  * misturar a origem das mensagens.
  */
-export function toLlmText(records: MessageRecord[], request: ExportRequest): string {
+export function toLlmText(records: MessageRecord[]): string {
   const byChat = new Map<string, MessageRecord[]>()
   for (const record of records) {
     const group = byChat.get(record.chatId)
@@ -35,8 +35,6 @@ export function toLlmText(records: MessageRecord[], request: ExportRequest): str
   }
 
   const lines: string[] = [
-    'Mensagens exportadas do WhatsApp (somente leitura).',
-    `Período: ${formatLocalTimestamp(request.from)} a ${formatLocalTimestamp(request.to)} (horário local).`,
     `Conversas: ${byChat.size}. Mensagens: ${records.length}.`,
     'Cada conversa está delimitada por marcadores de INÍCIO/FIM.',
   ]
@@ -72,7 +70,7 @@ export class ExportService {
     await mkdir(this.exportsDirectory, { recursive: true })
     const extension = request.format === 'text' ? 'txt' : 'jsonl'
     const fileName = `messages-${exportTimestamp()}-${randomUUID().slice(0, 8)}.${extension}`
-    const content = request.format === 'text' ? toLlmText(records, request) : toJsonl(records)
+    const content = request.format === 'text' ? toLlmText(records) : toJsonl(records)
 
     await writeFileAtomic(path.join(this.exportsDirectory, fileName), content, {
       encoding: 'utf8',
