@@ -109,6 +109,13 @@ export function useReaderApp() {
     if (result) queryClient.setQueryData(['status'], result)
   }
 
+  async function reconnect(): Promise<void> {
+    const result = await run(() =>
+      requestJson<AppStatus>('/api/session/reconnect', { method: 'POST' }),
+    )
+    if (result) queryClient.setQueryData(['status'], result)
+  }
+
   return {
     status,
     config: shallowReadonly(config),
@@ -138,6 +145,7 @@ export function useReaderApp() {
     resumeSync: sync.resumeSync,
     cancelSync: sync.cancelSync,
     resetSession,
+    reconnect,
     createExport: exports.createExport,
     openDataDirectory: exports.openDataDirectory,
     loadMessagePreview: preview.load,

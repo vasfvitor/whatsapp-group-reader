@@ -9,6 +9,8 @@ const props = defineProps<{
 
 defineEmits<{
   reset: []
+  retry: []
+  reconnect: []
 }>()
 
 const stateLabel = computed(() => {
@@ -24,6 +26,9 @@ const stateLabel = computed(() => {
   }
   return labels[props.status.state]
 })
+
+// Conectado, porém a última operação falhou: oferecer recuperação sem QR novo.
+const showRecovery = computed(() => props.status.state === 'ready' && Boolean(props.status.lastError))
 
 const stateClass = computed(() => ({
   'status-pill': true,
@@ -51,6 +56,15 @@ const stateClass = computed(() => ({
     </div>
 
     <p v-if="status.lastError" class="inline-error">{{ status.lastError }}</p>
+
+    <div v-if="showRecovery" class="recovery-actions">
+      <button class="button button--secondary" type="button" :disabled="busy" @click="$emit('retry')">
+        Tentar novamente
+      </button>
+      <button class="button button--ghost" type="button" :disabled="busy" @click="$emit('reconnect')">
+        Reconectar
+      </button>
+    </div>
 
     <button
       v-if="status.state === 'invalid_session'"
@@ -166,6 +180,13 @@ const stateClass = computed(() => ({
   margin: 0;
   font-weight: 700;
   text-align: right;
+}
+
+.recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
 .warning-list {

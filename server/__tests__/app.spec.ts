@@ -64,6 +64,7 @@ function createHarness() {
     resumeSync: vi.fn<() => void>(),
     cancelSync: vi.fn<() => void>(),
     resetSession: vi.fn<() => Promise<void>>(async () => undefined),
+    reconnect: vi.fn<() => Promise<void>>(async () => undefined),
   }
   const exportService = {
     create: vi.fn<(payload: ExportRequest, chatIds: string[]) => Promise<ExportResult>>(),
@@ -79,7 +80,7 @@ function createHarness() {
     development: true,
   })
 
-  return { app, database, exportService }
+  return { app, database, exportService, whatsappService }
 }
 
 describe('HTTP API contracts', () => {
@@ -154,6 +155,13 @@ describe('HTTP API contracts', () => {
       .expect(400)
 
     expect(exportService.create).not.toHaveBeenCalled()
+  })
+
+  it('reconnects the session without wiping the local auth', async () => {
+    const { app, whatsappService } = createHarness()
+    await request(app).post('/api/session/reconnect').expect(202)
+    expect(whatsappService.reconnect).toHaveBeenCalledOnce()
+    expect(whatsappService.resetSession).not.toHaveBeenCalled()
   })
 
   it('exports diagnostic logs as JSONL', async () => {

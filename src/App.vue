@@ -38,8 +38,10 @@ function confirmForcedSync(): void {
       <div class="top-grid">
         <ConnectionCard
           :status="reader.status.value"
-          :busy="reader.saving.value"
+          :busy="reader.saving.value || reader.refreshing.value"
           @reset="confirmSessionReset"
+          @retry="reader.refreshChats(true)"
+          @reconnect="reader.reconnect"
         />
         <SyncSettingsForm
           :settings="reader.config.value.sync"

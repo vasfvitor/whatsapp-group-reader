@@ -25,6 +25,10 @@ export function createReaderRouter({ whatsappService }: AppDependencies): Router
     whatsappService.cancelSync()
     response.json(whatsappService.getStatus())
   })
+  router.post('/session/reconnect', async (_request, response) => {
+    await whatsappService.reconnect()
+    response.status(202).json(whatsappService.getStatus())
+  })
   router.post('/session/reset', async (_request, response) => {
     await whatsappService.resetSession()
     response.status(202).json(whatsappService.getStatus())
