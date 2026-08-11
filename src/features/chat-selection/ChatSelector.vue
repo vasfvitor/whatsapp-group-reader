@@ -49,7 +49,6 @@ function selectVisible(selected: boolean): void {
   <section class="panel selector-panel" aria-labelledby="selector-title">
     <div class="panel-heading">
       <div>
-        <p class="eyebrow">Allowlist</p>
         <h2 id="selector-title">Escolha as conversas</h2>
         <p>Somente os itens marcados terão mensagens coletadas.</p>
       </div>
@@ -130,7 +129,7 @@ function selectVisible(selected: boolean): void {
   gap: 1rem;
 }
 
-.panel-heading p:not(.eyebrow) {
+.panel-heading p {
   margin: 0.35rem 0 0;
   color: var(--text-muted);
 }

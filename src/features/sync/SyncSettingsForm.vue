@@ -56,7 +56,6 @@ const profileDescription = computed(() =>
 
 <template>
   <section class="panel" aria-labelledby="sync-settings-title">
-    <p class="eyebrow">Janela de coleta</p>
     <h2 id="sync-settings-title">Quanto buscar</h2>
     <p class="helper-copy">
       A aplicação busca até o limite por conversa e descarta mensagens anteriores à janela.

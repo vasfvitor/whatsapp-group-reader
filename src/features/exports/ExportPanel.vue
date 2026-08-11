@@ -67,7 +67,6 @@ function submitExport(): void {
 
 <template>
   <section class="panel export-panel" aria-labelledby="export-title">
-    <p class="eyebrow">Resultado</p>
     <h2 id="export-title">Sincronizar e baixar JSONL</h2>
     <p class="helper-copy">
       O download contém apenas mensagens já coletadas e respeita o limite por conversa.

@@ -38,7 +38,6 @@ function removeSource(index: number): void {
 
 <template>
   <section class="panel" aria-labelledby="rules-title">
-    <p class="eyebrow">Atalhos de seleção</p>
     <h2 id="rules-title">Filtros e tags</h2>
     <p class="helper-copy">
       Os filtros apenas marcam candidatos. Você ainda pode revisar os checkboxes antes de salvar.

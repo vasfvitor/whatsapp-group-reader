@@ -55,7 +55,6 @@ onBeforeUnmount(() => {
   <section class="panel progress-panel" aria-labelledby="sync-progress-title">
     <div class="progress-heading">
       <div>
-        <p class="eyebrow">Fila de sincronização</p>
         <h2 id="sync-progress-title">
           {{ progress.phase === 'paused' ? 'Pausada' : 'Coletando gradualmente' }}
         </h2>

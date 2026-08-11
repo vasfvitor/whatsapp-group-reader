@@ -42,7 +42,6 @@ const stateClass = computed(() => ({
   <section class="panel connection-panel" aria-labelledby="connection-title">
     <div class="panel-heading">
       <div>
-        <p class="eyebrow">Conexão</p>
         <h2 id="connection-title">Seu WhatsApp</h2>
       </div>
       <span :class="stateClass">{{ stateLabel }}</span>
