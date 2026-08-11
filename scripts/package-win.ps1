@@ -1,6 +1,6 @@
 #Requires -Version 7
 <#
-  Gera o pacote portátil para Windows (zip com Node + Chromium + app).
+  Gera o pacote portátil para Windows (zip com Node + app; usa o Microsoft Edge da máquina).
   Uso:  pnpm package:win   [-NodeVersion 24.14.0] [-SkipBuild] [-SkipSmokeTest]
   Saída: release/whatsapp-group-reader-win64-<versão>-<data>.zip
 #>

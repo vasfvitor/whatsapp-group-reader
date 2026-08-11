@@ -27,8 +27,9 @@ COMO USAR
    autorizadas e salve.
 
 PARA ENCERRAR
-8. Feche a janela preta. Se algo ficar travado, dê dois cliques
-   em "Parar.cmd".
+8. Pressione a tecla F na janela preta (encerramento correto),
+   ou simplesmente feche a janela. Se algo ficar travado,
+   dê dois cliques em "Parar.cmd".
 
 SEUS DADOS
 9. Ficam guardados em:

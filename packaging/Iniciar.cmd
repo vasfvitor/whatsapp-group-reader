@@ -10,7 +10,6 @@ set "APP_DEV="
 cd /d "%PKG%app" || (echo Pasta "app" nao encontrada. Extraia o zip completo antes de iniciar. & pause & exit /b 1)
 
 echo Iniciando... o navegador vai abrir sozinho em alguns segundos.
-echo NAO FECHE esta janela enquanto estiver usando o programa.
 echo.
 
 "%PKG%runtime\node.exe" dist\server\server\index.js
